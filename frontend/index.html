@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FreshScan AI • Real-Time Produce Freshness Classifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-content">
+      <div class="brand">
+        <div class="brand-icon">
+          <span class="icon-pulse"></span>
+          🥗
+        </div>
+        <div>
+          <h1 class="brand-title">FreshScan <span class="gradient-text">AI</span></h1>
+          <p class="brand-tagline">Deep Learning Produce & Freshness Inspector</p>
+        </div>
+      </div>
+
+      <div class="header-badges">
+        <div class="status-chip" id="system-status">
+          <span class="status-dot"></span>
+          <span id="status-text">System Ready</span>
+        </div>
+        <div class="model-badge" id="hardware-badge">🍓 RPi 4B • OV5647 Ready</div>
+        <div class="model-badge" id="esp32-badge">📡 ESP32 Panel: Syncing...</div>
+        <div class="model-badge" id="engine-badge">TFLite SIMD • 10 Classes</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-layout">
+    <!-- Left Column: Input Studio (Camera & Upload) -->
+    <section class="card input-card">
+      <!-- Tabs Switcher -->
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="picam">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+          </svg>
+          Pi Camera Rev 1.3
+        </button>
+        <button class="tab-btn" data-tab="camera">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          Webcam
+        </button>
+        <button class="tab-btn" data-tab="upload">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Upload Image
+        </button>
+      </div>
+
+      <!-- Tab Content: Raspberry Pi Camera (Rev 1.3) -->
+      <div class="tab-content active" id="tab-picam">
+        <div class="camera-viewport" id="picam-viewport">
+          <img id="picam-stream-feed" src="/api/camera/stream" alt="Raspberry Pi Camera Feed" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.style.opacity='0.25'; document.getElementById('picam-fallback-msg').style.display='flex';" onload="this.style.opacity='1'; document.getElementById('picam-fallback-msg').style.display='none';">
+
+          <!-- Fallback placeholder if stream disconnected -->
+          <div class="camera-placeholder" id="picam-fallback-msg" style="display: none;">
+            <div class="cam-icon-large">🍓</div>
+            <h3>Raspberry Pi Camera Offline</h3>
+            <p>Connect Rev 1.3 camera to CSI port & restart or click "Snap Pi Camera".</p>
+          </div>
+
+          <!-- Laser Scan Reticle Overlay -->
+          <div class="viewfinder-overlay" id="picam-viewfinder-overlay">
+            <div class="corner corner-tl"></div>
+            <div class="corner corner-tr"></div>
+            <div class="corner corner-bl"></div>
+            <div class="corner corner-br"></div>
+            <div class="scan-laser" id="picam-scan-laser"></div>
+          </div>
+        </div>
+
+        <!-- Sensor Status Banner -->
+        <div class="picam-info-banner">
+          <span class="sensor-badge">📷 Hardware: <strong id="picam-sensor-name">OV5647 (Pi Camera Rev 1.3)</strong></span>
+          <span class="backend-badge" id="picam-backend-badge">Checking...</span>
+        </div>
+
+        <!-- Pi Camera Controls -->
+        <div class="controls-bar">
+          <button class="btn btn-primary" id="btn-picam-capture">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Snap Pi Camera & Analyze
+          </button>
+
+          <button class="btn btn-secondary" id="btn-refresh-stream" title="Refresh Live Stream Feed">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Reload Stream</span>
+          </button>
+
+          <label class="toggle-container" title="Continuously snap and classify from Pi Camera every 3s">
+            <input type="checkbox" id="toggle-picam-autoscan">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Auto-Scan</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Tab Content: Live Camera -->
+      <div class="tab-content" id="tab-camera">
+        <div class="camera-viewport" id="camera-viewport">
+          <video id="webcam-feed" autoplay playsinline muted></video>
+          <canvas id="snapshot-canvas" style="display: none;"></canvas>
+
+          <!-- Laser Scan Reticle Overlay -->
+          <div class="viewfinder-overlay" id="viewfinder-overlay">
+            <div class="corner corner-tl"></div>
+            <div class="corner corner-tr"></div>
+            <div class="corner corner-bl"></div>
+            <div class="corner corner-br"></div>
+            <div class="scan-laser" id="scan-laser"></div>
+            <div class="camera-placeholder" id="camera-placeholder">
+              <div class="cam-icon-large">📷</div>
+              <h3>Camera Inactive</h3>
+              <p>Click "Start Camera" to enable real-time produce scanning</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="controls-bar">
+          <button class="btn btn-secondary" id="btn-toggle-camera">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span id="camera-btn-text">Start Camera</span>
+          </button>
+
+          <button class="btn btn-primary" id="btn-capture" disabled>
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Capture & Analyze
+          </button>
+
+          <label class="toggle-container" title="Continuously analyze video frame every 3s">
+            <input type="checkbox" id="toggle-autoscan" disabled>
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Auto-Scan</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Tab Content: File Upload -->
+      <div class="tab-content" id="tab-upload">
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept="image/*" style="display: none;">
+          <div class="dropzone-content">
+            <div class="drop-icon">📁</div>
+            <h3>Drop produce image here</h3>
+            <p>or <span class="highlight-link" id="browse-link">browse from your computer</span></p>
+            <span class="file-hint">Supports JPEG, PNG, WebP (RGBA supported) • Paste Ctrl+V</span>
+          </div>
+          <div class="preview-overlay" id="upload-preview-overlay" style="display: none;">
+            <img id="upload-preview-img" alt="Upload preview">
+            <button class="remove-preview-btn" id="btn-remove-preview" title="Remove image">✕</button>
+          </div>
+        </div>
+
+        <div class="controls-bar">
+          <button class="btn btn-secondary" id="btn-load-sample">
+            <span>🥕 Load Sample (Carrot)</span>
+          </button>
+          <button class="btn btn-primary" id="btn-analyze-upload" disabled>
+            <span>🔍 Analyze Uploaded Image</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Supported Produce Classes Ribbon -->
+      <div class="supported-produce-section">
+        <span class="section-badge">10 Supported Classes</span>
+        <div class="produce-chips-scroll">
+          <span class="chip">🍎 Apple</span>
+          <span class="chip">🍌 Banana</span>
+          <span class="chip">🫑 Bell Pepper</span>
+          <span class="chip">🥕 Carrot</span>
+          <span class="chip">🥒 Cucumber</span>
+          <span class="chip">🥭 Mango</span>
+          <span class="chip">🍊 Orange</span>
+          <span class="chip">🥔 Potato</span>
+          <span class="chip">🍓 Strawberry</span>
+          <span class="chip">🍅 Tomato</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Results & Analytics Dashboard -->
+    <section class="card results-card">
+      <div class="card-header">
+        <h2 class="section-title">Inspection Results</h2>
+        <span class="badge" id="results-state-badge">Awaiting Input</span>
+      </div>
+
+      <!-- Empty State View -->
+      <div class="empty-state" id="empty-state">
+        <div class="empty-illustration">🔬</div>
+        <h3>No Analysis Yet</h3>
+        <p>Capture a frame from your camera or upload a photo to inspect produce category and freshness level.</p>
+      </div>
+
+      <!-- Loading Spinner View -->
+      <div class="loading-state" id="loading-state" style="display: none;">
+        <div class="sonar-spinner">
+          <div class="sonar-wave"></div>
+          <div class="sonar-wave"></div>
+          <div class="sonar-wave"></div>
+          <span class="sonar-center">🧠</span>
+        </div>
+        <h3>Analyzing Image...</h3>
+        <p>Running MobileNetV2 category & freshness classifiers</p>
+      </div>
+
+      <!-- Active Results View -->
+      <div class="results-dashboard" id="results-dashboard" style="display: none;">
+        <!-- Freshness Verdict Banner -->
+        <div class="verdict-banner" id="verdict-banner">
+          <div class="verdict-top">
+            <span class="verdict-tag" id="verdict-tag">🌿 FRESH PRODUCE</span>
+            <span class="verdict-score" id="verdict-score">99.9%</span>
+          </div>
+          <h3 class="verdict-title" id="verdict-title">Optimal Quality</h3>
+          <div class="meter-bar-track">
+            <div class="meter-bar-fill" id="verdict-meter"></div>
+          </div>
+          <p class="verdict-desc" id="verdict-desc">Produce is in fresh condition, safe for consumption.</p>
+        </div>
+
+        <!-- Produce Category Card -->
+        <div class="category-card">
+          <div class="category-header">
+            <span class="sub-label">IDENTIFIED PRODUCE</span>
+            <span class="category-type-pill" id="category-type-pill">Vegetable</span>
+          </div>
+          <div class="category-body">
+            <span class="category-emoji" id="category-emoji">🥕</span>
+            <div class="category-info">
+              <h3 class="category-name" id="category-name">Carrot</h3>
+              <div class="category-match-row">
+                <span>Confidence Match:</span>
+                <strong id="category-score">100.0%</strong>
+              </div>
+              <div class="meter-bar-track small">
+                <div class="meter-bar-fill cat-fill" id="category-meter"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Storage & Culinary Tip Card -->
+        <div class="tip-card">
+          <span class="tip-icon">💡</span>
+          <div class="tip-content">
+            <h4 class="tip-title">Storage & Freshness Tip</h4>
+            <p class="tip-text" id="storage-tip-text">Keep in crisper drawer.</p>
+          </div>
+        </div>
+
+        <!-- Visual Inspection Result Tabs (Annotated vs Original) -->
+        <div class="visual-inspection-box">
+          <div class="inspection-header">
+            <span class="sub-label">ANNOTATED VISUAL INSPECTION</span>
+            <button class="btn-text" id="btn-fullscreen-annotated">🔍 Enlarge</button>
+          </div>
+          <div class="annotated-image-wrapper">
+            <img id="annotated-image-display" src="" alt="Annotated detection output">
+          </div>
+        </div>
+
+        <!-- Developer JSON Details Accordion -->
+        <details class="tech-accordion">
+          <summary>⚙️ Technical API Response (JSON)</summary>
+          <div class="json-container">
+            <button class="btn-copy-json" id="btn-copy-json">📋 Copy JSON</button>
+            <pre><code id="json-code-block">{}</code></pre>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <!-- FreshScan AI 2.0 Physical Alerts & ESP32 Live Sync Dashboard -->
+  <section class="panel-grid-container">
+    <!-- Active Spoilage Alerts -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="section-title">🚨 Active Spoilage Alerts (ESP32 LCD & LED Sync)</h2>
+        <span class="badge" id="active-alerts-count-badge">0 Active</span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+        Unresolved spoilage alerts wirelessly synchronized with the ESP32 physical panel and Telegram.
+      </p>
+
+      <div id="active-alerts-list" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+        <div class="empty-alerts-placeholder" id="empty-alerts-placeholder">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🌿</div>
+          <h4>No Spoilage Alerts Active</h4>
+          <p>All inspected fruits and vegetables are in good condition. All ESP32 LEDs are OFF.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ESP32 & Telegram Hardware Test Studio -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="section-title">🛠️ Hardware Test Studio</h2>
+        <span class="badge">Testing Tools</span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+        Test the ESP32 16x2 LCD display, 10-LED bank, and Telegram bot notifications without real spoiled samples.
+      </p>
+
+      <div class="simulator-form" style="margin-top: 0.5rem;">
+        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">Simulate Spoilage on Category:</label>
+        <select class="sim-select" id="sim-produce-select">
+          <option value="Tomato">🍅 Tomato (LED #10 • GPIO 27)</option>
+          <option value="Apple">🍎 Apple (LED #1 • GPIO 13)</option>
+          <option value="Banana">🍌 Banana (LED #2 • GPIO 14)</option>
+          <option value="Bellpepper">🫑 Bell Pepper (LED #3 • GPIO 16)</option>
+          <option value="Carrot">🥕 Carrot (LED #4 • GPIO 17)</option>
+          <option value="Cucumber">🥒 Cucumber (LED #5 • GPIO 18)</option>
+          <option value="Mango">🥭 Mango (LED #6 • GPIO 19)</option>
+          <option value="Orange">🍊 Orange (LED #7 • GPIO 23)</option>
+          <option value="Potato">🥔 Potato (LED #8 • GPIO 25)</option>
+          <option value="Strawberry">🍓 Strawberry (LED #9 • GPIO 26)</option>
+        </select>
+
+        <button class="btn btn-primary" id="btn-trigger-test-alert" style="justify-content: center;">
+          ⚡ Send Alert to ESP32 & Telegram
+        </button>
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button class="btn btn-secondary" id="btn-test-telegram" style="flex: 1; justify-content: center; font-size: 0.8rem;">
+            ✈️ Test Telegram Link
+          </button>
+          <button class="btn btn-secondary" id="btn-refresh-alerts" style="justify-content: center; font-size: 0.8rem;">
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Recent Scans History Strip -->
+  <section class="history-section" id="history-section" style="display: none;">
+    <div class="history-header">
+      <h3>Recent Scans</h3>
+      <button class="btn-text" id="btn-clear-history">Clear History</button>
+    </div>
+    <div class="history-strip" id="history-strip"></div>
+  </section>
+
+  <!-- Fullscreen Image Modal -->
+  <div class="modal" id="image-modal">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close-btn" id="modal-close-btn">✕</button>
+      <img id="modal-image" src="" alt="Enlarged view">
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -7,6 +7,8 @@ opencv-python
 fastapi
 uvicorn
 python-dotenv
-Pillow
+pillow
 scikit-learn
 gradio
+paho-mqtt
+requests

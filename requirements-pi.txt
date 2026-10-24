@@ -1,0 +1,17 @@
+# Optimized requirements for Raspberry Pi 4B (64-bit OS)
+numpy
+pillow
+opencv-python-headless
+fastapi
+uvicorn
+python-dotenv
+pandas
+scikit-learn
+gradio
+paho-mqtt
+requests
+
+# TensorFlow for ARM64:
+# Note: On Raspberry Pi OS 64-bit (aarch64), official 'tensorflow' wheels install cleanly.
+# The project will automatically use TFLite SIMD acceleration with minimal RAM.
+tensorflow

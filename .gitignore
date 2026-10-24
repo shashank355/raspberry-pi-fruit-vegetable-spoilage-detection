@@ -206,5 +206,21 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-#Ignore all files in a folder called artifacts
-artifacts/
+# Artifacts data and databases (keep model weights)
+artifacts/data/
+artifacts/*.db
+artifacts/results/
+!artifacts/models/
+
+# Runtime captured images
+captured_images/*
+!captured_images/.gitkeep
+
+# Runtime test snapshots
+camera_test.jpg
+annotated_result.jpg
+
+# Environment secrets
+.env
+.env.*
+!.env.example
