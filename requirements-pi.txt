@@ -1,7 +1,7 @@
-# Optimized requirements for Raspberry Pi 4B (64-bit OS)
+# Optimized requirements for Raspberry Pi 5 (ARM Cortex-A76, 64-bit OS)
 numpy
 pillow
-opencv-python-headless
+opencv-python
 fastapi
 uvicorn
 python-dotenv
@@ -11,7 +11,9 @@ gradio
 paho-mqtt
 requests
 
+# Google GenAI SDK for Gemini AI Pro multimodal quality inspection
+google-genai
+
 # TensorFlow for ARM64:
-# Note: On Raspberry Pi OS 64-bit (aarch64), official 'tensorflow' wheels install cleanly.
-# The project will automatically use TFLite SIMD acceleration with minimal RAM.
+# Automatically utilizes ARMv8.2-A / Neon SIMD acceleration with minimal RAM on Pi 5
 tensorflow

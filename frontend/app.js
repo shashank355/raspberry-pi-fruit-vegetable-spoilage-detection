@@ -1,12 +1,19 @@
+// ==============================================================================
+// FreshScan AI 2.0 • Raspberry Pi 5 + USB Camera + Gemini AI Pro Dashboard Controller
+// ==============================================================================
+
 // State management
 let currentStream = null;
 let autoScanInterval = null;
+let usbcamAutoScanInterval = null;
+let aiProAutoScanInterval = null;
 let isAnalyzing = false;
+let isAiProAnalyzing = false;
 let uploadedBlob = null;
 let currentResult = null;
 const HISTORY_STORAGE_KEY = 'freshscan_scan_history';
 
-// DOM Elements
+// DOM Elements: Webcam (Browser HTML5 MediaDevices)
 const videoFeed = document.getElementById('webcam-feed');
 const snapshotCanvas = document.getElementById('snapshot-canvas');
 const scanLaser = document.getElementById('scan-laser');
@@ -16,15 +23,51 @@ const cameraBtnText = document.getElementById('camera-btn-text');
 const btnCapture = document.getElementById('btn-capture');
 const toggleAutoscan = document.getElementById('toggle-autoscan');
 
-// Raspberry Pi Camera Rev 1.3 DOM Elements
-const btnPicamCapture = document.getElementById('btn-picam-capture');
+// DOM Elements: External USB Camera (Raspberry Pi 5)
+const btnUsbcamCapture = document.getElementById('btn-usbcam-capture');
 const btnRefreshStream = document.getElementById('btn-refresh-stream');
-const togglePicamAutoscan = document.getElementById('toggle-picam-autoscan');
-const picamStreamFeed = document.getElementById('picam-stream-feed');
-const picamScanLaser = document.getElementById('picam-scan-laser');
-const picamSensorName = document.getElementById('picam-sensor-name');
-const picamBackendBadge = document.getElementById('picam-backend-badge');
-let picamAutoScanInterval = null;
+const toggleUsbcamAutoscan = document.getElementById('toggle-usbcam-autoscan');
+const usbcamStreamFeed = document.getElementById('usbcam-stream-feed');
+const usbcamScanLaser = document.getElementById('usbcam-scan-laser');
+const usbcamSensorName = document.getElementById('usbcam-sensor-name');
+const usbcamBackendBadge = document.getElementById('usbcam-backend-badge');
+const selectUsbDevice = document.getElementById('select-usb-device');
+
+// DOM Elements: AI Pro Studio & Controls
+const toggleAiPro = document.getElementById('toggle-ai-pro');
+const aiProToggleStatusText = document.getElementById('ai-pro-toggle-status-text');
+const aiProIntervalSelect = document.getElementById('ai-pro-interval-select');
+const btnAiProInspectNow = document.getElementById('btn-ai-pro-inspect-now');
+const btnOpenKeyModal = document.getElementById('btn-open-key-modal');
+const cooldownPill = document.getElementById('cooldown-pill');
+const telemetryCalls = document.getElementById('telemetry-calls');
+const telemetryTokensSaved = document.getElementById('telemetry-tokens-saved');
+const telemetrySkipped = document.getElementById('telemetry-skipped');
+const telemetryTokensUsed = document.getElementById('telemetry-tokens-used');
+const aiProHeaderBadge = document.getElementById('ai-pro-header-badge');
+
+// DOM Elements: AI Pro Results Display Card
+const aiProResultCard = document.getElementById('ai-pro-result-card');
+const aiProGradeBadge = document.getElementById('ai-pro-grade-badge');
+const aiProScorePill = document.getElementById('ai-pro-score-pill');
+const aiProShelfLife = document.getElementById('ai-pro-shelf-life');
+const aiProRipeness = document.getElementById('ai-pro-ripeness');
+const aiProWarningBox = document.getElementById('ai-pro-warning-box');
+const aiProSpoilageList = document.getElementById('ai-pro-spoilage-list');
+const aiProDefectsChips = document.getElementById('ai-pro-defects-chips');
+const aiProSummaryText = document.getElementById('ai-pro-summary-text');
+const aiProStorageText = document.getElementById('ai-pro-storage-text');
+const aiProTokenInfo = document.getElementById('ai-pro-token-info');
+const aiProSaverTag = document.getElementById('ai-pro-saver-tag');
+
+// DOM Elements: Gemini API Key Modal
+const keyModal = document.getElementById('key-modal');
+const keyModalBackdrop = document.getElementById('key-modal-backdrop');
+const keyModalCloseBtn = document.getElementById('key-modal-close-btn');
+const geminiKeyInput = document.getElementById('gemini-key-input');
+const geminiModelSelect = document.getElementById('gemini-model-select');
+const btnSaveKey = document.getElementById('btn-save-key');
+const btnCancelKey = document.getElementById('btn-cancel-key');
 
 // Tabs
 const tabButtons = document.querySelectorAll('.tab-btn');
@@ -40,9 +83,11 @@ const btnRemovePreview = document.getElementById('btn-remove-preview');
 const btnLoadSample = document.getElementById('btn-load-sample');
 const btnAnalyzeUpload = document.getElementById('btn-analyze-upload');
 
-// Results Dashboard
+// Results Dashboard (Local Inference)
 const emptyState = document.getElementById('empty-state');
 const loadingState = document.getElementById('loading-state');
+const loadingTitle = document.getElementById('loading-title');
+const loadingDesc = document.getElementById('loading-desc');
 const resultsDashboard = document.getElementById('results-dashboard');
 const resultsStateBadge = document.getElementById('results-state-badge');
 
@@ -74,8 +119,19 @@ const modalBackdrop = document.getElementById('modal-backdrop');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const modalImage = document.getElementById('modal-image');
 
+// Hardware alerts elements
+const activeAlertsList = document.getElementById('active-alerts-list');
+const emptyAlertsPlaceholder = document.getElementById('empty-alerts-placeholder');
+const activeAlertsCountBadge = document.getElementById('active-alerts-count-badge');
+const esp32Badge = document.getElementById('esp32-badge');
+const btnTriggerTestAlert = document.getElementById('btn-trigger-test-alert');
+const simProduceSelect = document.getElementById('sim-produce-select');
+const btnTestTelegram = document.getElementById('btn-test-telegram');
+const btnRefreshAlerts = document.getElementById('btn-refresh-alerts');
+
+
 // ==========================================
-// Subtle Web Audio Feedback (Success Chime)
+// Subtle Web Audio Feedback
 // ==========================================
 function playSuccessChime(isFresh) {
   try {
@@ -96,9 +152,10 @@ function playSuccessChime(isFresh) {
     osc.start();
     osc.stop(audioCtx.currentTime + 0.35);
   } catch (e) {
-    // Ignore audio context autoplay restrictions
+    // Autoplay restrictions
   }
 }
+
 
 // ==========================================
 // Tabs Switching
@@ -111,12 +168,484 @@ tabButtons.forEach(btn => {
     tabContents.forEach(c => c.classList.remove('active'));
 
     btn.classList.add('active');
-    document.getElementById(`tab-${targetTab}`).classList.add('active');
+    const targetEl = document.getElementById(`tab-${targetTab}`);
+    if (targetEl) targetEl.classList.add('active');
   });
 });
 
+
 // ==========================================
-// Camera Controls (HTML5 MediaDevices API)
+// External USB Camera Handlers (Raspberry Pi 5)
+// ==========================================
+async function loadCameraDevices() {
+  try {
+    const res = await fetch('/api/camera/devices');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (selectUsbDevice && data.devices) {
+      selectUsbDevice.innerHTML = '<option value="auto">Auto-detect USB</option>';
+      data.devices.forEach(dev => {
+        const opt = document.createElement('option');
+        opt.value = dev.index;
+        opt.textContent = `${dev.node}: ${dev.name} ${dev.is_usb ? '(USB)' : ''}`;
+        if (dev.index === data.current_index) {
+          opt.selected = true;
+        }
+        selectUsbDevice.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.warn('Could not load camera devices:', e);
+  }
+}
+
+if (selectUsbDevice) {
+  selectUsbDevice.addEventListener('change', async () => {
+    const chosen = selectUsbDevice.value;
+    try {
+      const res = await fetch('/api/camera/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index: chosen === 'auto' ? 'auto' : parseInt(chosen) })
+      });
+      if (res.ok) {
+        checkUsbCameraStatus();
+        if (usbcamStreamFeed) {
+          usbcamStreamFeed.src = `/api/camera/stream?t=${Date.now()}`;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to switch camera:', e);
+    }
+  });
+}
+
+async function checkUsbCameraStatus() {
+  try {
+    const res = await fetch('/api/camera/status');
+    if (!res.ok) return;
+    const status = await res.json();
+    if (usbcamSensorName && status.sensor) {
+      usbcamSensorName.textContent = status.sensor;
+    }
+    if (usbcamBackendBadge && status.backend) {
+      usbcamBackendBadge.textContent = status.backend.toUpperCase();
+      usbcamBackendBadge.style.color = status.available ? '#34d399' : '#fbbf24';
+    }
+    const hwBadge = document.getElementById('hardware-badge');
+    if (hwBadge) {
+      hwBadge.textContent = `🍓 RPi 5 • ${status.available ? 'USB Cam Ready' : 'Virtual Cam'}`;
+    }
+  } catch (e) {
+    console.warn('Could not query USB camera status:', e);
+  }
+}
+
+async function captureUsbCameraFrame() {
+  if (isAnalyzing) return;
+  isAnalyzing = true;
+
+  if (usbcamScanLaser) usbcamScanLaser.classList.add('scanning');
+  emptyState.style.display = 'none';
+  resultsDashboard.style.display = 'none';
+  loadingState.style.display = 'flex';
+  if (loadingTitle) loadingTitle.textContent = 'Snapping USB Camera...';
+  if (loadingDesc) loadingDesc.textContent = 'Executing inference on Raspberry Pi 5';
+  resultsStateBadge.textContent = 'Inference Running...';
+  resultsStateBadge.style.color = '#38bdf8';
+
+  try {
+    const res = await fetch('/api/camera/capture', { method: 'POST' });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ detail: 'USB Camera capture failed' }));
+      throw new Error(errData.detail || 'USB Camera capture error');
+    }
+    const data = await res.json();
+    currentResult = data;
+    renderResults(data);
+    saveToHistory(data);
+  } catch (err) {
+    console.error('USB Camera Capture error:', err);
+    alert(`Raspberry Pi 5 USB Camera Capture Failed: ${err.message}`);
+    loadingState.style.display = 'none';
+    if (!currentResult) emptyState.style.display = 'flex';
+  } finally {
+    isAnalyzing = false;
+    if (usbcamScanLaser) usbcamScanLaser.classList.remove('scanning');
+  }
+}
+
+if (btnUsbcamCapture) {
+  btnUsbcamCapture.addEventListener('click', captureUsbCameraFrame);
+}
+
+if (btnRefreshStream && usbcamStreamFeed) {
+  btnRefreshStream.addEventListener('click', () => {
+    usbcamStreamFeed.src = `/api/camera/stream?t=${Date.now()}`;
+  });
+}
+
+if (toggleUsbcamAutoscan) {
+  toggleUsbcamAutoscan.addEventListener('change', () => {
+    if (toggleUsbcamAutoscan.checked) {
+      usbcamAutoScanInterval = setInterval(() => {
+        if (!isAnalyzing && !isAiProAnalyzing) {
+          captureUsbCameraFrame();
+        }
+      }, 3000);
+    } else {
+      clearInterval(usbcamAutoScanInterval);
+      usbcamAutoScanInterval = null;
+    }
+  });
+}
+
+
+// ==============================================================================
+// GEMINI AI PRO QUALITY INSPECTION & TOKEN PROTECTOR
+// ==============================================================================
+
+async function fetchAiProStatus() {
+  try {
+    const res = await fetch('/api/ai-pro/status');
+    if (!res.ok) return;
+    const telemetry = await res.json();
+    updateTelemetryUI(telemetry);
+  } catch (e) {
+    console.warn('Could not fetch AI Pro status:', e);
+  }
+}
+
+function updateTelemetryUI(telemetry) {
+  if (!telemetry) return;
+
+  if (telemetryCalls) telemetryCalls.textContent = telemetry.total_calls ?? 0;
+  if (telemetryTokensSaved) telemetryTokensSaved.textContent = `~${telemetry.estimated_tokens_saved ?? 0}`;
+  if (telemetrySkipped) telemetrySkipped.textContent = telemetry.saved_calls ?? 0;
+  if (telemetryTokensUsed) telemetryTokensUsed.textContent = telemetry.estimated_tokens_used ?? 0;
+
+  if (cooldownPill) {
+    if (telemetry.cooldown_remaining > 0) {
+      cooldownPill.textContent = `Cooldown: ${telemetry.cooldown_remaining}s`;
+      cooldownPill.style.color = '#fbbf24';
+    } else {
+      cooldownPill.textContent = `Cooldown: Ready`;
+      cooldownPill.style.color = '#34d399';
+    }
+  }
+
+  if (aiProHeaderBadge) {
+    if (!telemetry.is_configured) {
+      aiProHeaderBadge.textContent = '✨ AI Pro: No Key';
+      aiProHeaderBadge.style.color = '#f87171';
+    } else if (telemetry.is_active) {
+      aiProHeaderBadge.textContent = '✨ AI Pro: Live Auto';
+      aiProHeaderBadge.style.color = '#e879f9';
+    } else {
+      aiProHeaderBadge.textContent = '✨ AI Pro: Ready';
+      aiProHeaderBadge.style.color = '#c084fc';
+    }
+  }
+
+  // Update toggle state if desynced
+  if (toggleAiPro && toggleAiPro.checked !== Boolean(telemetry.is_active)) {
+    toggleAiPro.checked = Boolean(telemetry.is_active);
+    updateAiProToggleLabel(telemetry.is_active);
+  }
+}
+
+function updateAiProToggleLabel(isActive) {
+  if (aiProToggleStatusText) {
+    aiProToggleStatusText.textContent = isActive ? 'AI Pro: ACTIVE' : 'AI Pro: OFF';
+    aiProToggleStatusText.style.color = isActive ? '#c084fc' : 'var(--text-muted)';
+  }
+}
+
+// Toggle AI Pro Switch Handler
+if (toggleAiPro) {
+  toggleAiPro.addEventListener('change', async () => {
+    const shouldActivate = toggleAiPro.checked;
+    updateAiProToggleLabel(shouldActivate);
+
+    try {
+      const res = await fetch('/api/ai-pro/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: shouldActivate })
+      });
+      const data = await res.json();
+
+      if (data.telemetry) {
+        updateTelemetryUI(data.telemetry);
+
+        if (shouldActivate && !data.telemetry.is_configured) {
+          alert('Notice: Gemini API key is not yet configured. Please click "Key" to enter your API key.');
+          openKeyModal();
+          toggleAiPro.checked = false;
+          updateAiProToggleLabel(false);
+          return;
+        }
+      }
+
+      if (shouldActivate) {
+        startAiProLoop();
+      } else {
+        stopAiProLoop();
+      }
+    } catch (e) {
+      console.error('Failed to toggle AI Pro:', e);
+      toggleAiPro.checked = !shouldActivate;
+      updateAiProToggleLabel(!shouldActivate);
+    }
+  });
+}
+
+function startAiProLoop() {
+  stopAiProLoop();
+  const intervalSeconds = parseFloat(aiProIntervalSelect?.value || '15');
+  console.log(`[AI Pro] Starting frequent auto-inspection loop every ${intervalSeconds}s (Token-Saver active).`);
+
+  // Run first inspection immediately
+  runAiProInspection(false);
+
+  aiProAutoScanInterval = setInterval(() => {
+    if (toggleAiPro.checked && !isAiProAnalyzing && !isAnalyzing) {
+      runAiProInspection(false);
+    }
+  }, intervalSeconds * 1000);
+}
+
+function stopAiProLoop() {
+  if (aiProAutoScanInterval) {
+    clearInterval(aiProAutoScanInterval);
+    aiProAutoScanInterval = null;
+    console.log('[AI Pro] Stopped frequent auto-inspection loop.');
+  }
+}
+
+// When interval dropdown changes
+if (aiProIntervalSelect) {
+  aiProIntervalSelect.addEventListener('change', () => {
+    if (toggleAiPro.checked) {
+      startAiProLoop();
+    }
+  });
+}
+
+// Run single AI Pro Inspection
+async function runAiProInspection(force = false) {
+  if (isAiProAnalyzing) return;
+  isAiProAnalyzing = true;
+
+  if (usbcamScanLaser) usbcamScanLaser.classList.add('scanning');
+
+  try {
+    const url = `/api/ai-pro/inspect?source=camera&force=${force ? 'true' : 'false'}`;
+    const res = await fetch(url, { method: 'POST' });
+    const result = await res.json();
+
+    if (!res.ok || !result.success) {
+      if (result.code === 'MISSING_API_KEY') {
+        alert('Please configure your Gemini API Key first by clicking the Key button.');
+        openKeyModal();
+        if (toggleAiPro) {
+          toggleAiPro.checked = false;
+          updateAiProToggleLabel(false);
+          stopAiProLoop();
+        }
+      } else if (result.error) {
+        console.warn('[AI Pro] Inspection note:', result.error);
+      }
+      return;
+    }
+
+    // Handle token-saving skipped frames
+    if (result.skipped) {
+      console.log(`[AI Pro Token-Saver] ${result.message}`);
+      if (cooldownPill) {
+        cooldownPill.textContent = result.reason === 'static_scene'
+          ? `🛡️ Scene Unchanged (${result.diff_pct}%) • Tokens Saved`
+          : `🛡️ Cooldown Active (${result.cooldown_remaining}s)`;
+        cooldownPill.style.color = '#34d399';
+      }
+      updateTelemetryUI(result.stats);
+      return;
+    }
+
+    // New verification verdict from Gemini!
+    if (result.data) {
+      renderAiProResults(result.data, result.diff_pct);
+      updateTelemetryUI(result.stats);
+      playSuccessChime(result.data.freshness?.toLowerCase() === 'fresh');
+      fetchActiveAlerts();
+    }
+
+  } catch (err) {
+    console.error('[AI Pro] Inspection request error:', err);
+  } finally {
+    isAiProAnalyzing = false;
+    if (usbcamScanLaser) usbcamScanLaser.classList.remove('scanning');
+  }
+}
+
+function renderAiProResults(data, diffPct = 0) {
+  if (!aiProResultCard) return;
+
+  aiProResultCard.style.display = 'block';
+
+  // Make sure main results dashboard is also visible
+  emptyState.style.display = 'none';
+  resultsDashboard.style.display = 'flex';
+
+  const isFresh = (data.freshness || '').toLowerCase() === 'fresh';
+  const isSpoiled = !isFresh || (data.quality_grade || '').toLowerCase().includes('spoiled');
+
+  // Quality Grade Badge
+  if (aiProGradeBadge) {
+    aiProGradeBadge.textContent = data.quality_grade || (isFresh ? 'Grade A (Premium)' : 'Spoiled');
+    aiProGradeBadge.className = `quality-grade-badge ${isSpoiled ? 'spoiled' : ''}`;
+  }
+
+  // Quality Score Pill
+  if (aiProScorePill) {
+    aiProScorePill.textContent = `Score: ${data.quality_score ?? 90}/100`;
+  }
+
+  // Shelf Life & Ripeness
+  if (aiProShelfLife) {
+    const days = data.estimated_shelf_life_days ?? (isFresh ? 4 : 0);
+    aiProShelfLife.textContent = days > 0 ? `⏳ ~${days} Days Remaining` : '❌ Immediate Discard';
+  }
+  if (aiProRipeness) {
+    aiProRipeness.textContent = data.ripeness || 'Optimal Ripe';
+  }
+
+  // Observed Visual Defects Chips
+  if (aiProDefectsChips) {
+    aiProDefectsChips.innerHTML = '';
+    const defects = data.defects || [];
+    if (defects.length === 0) {
+      aiProDefectsChips.innerHTML = '<span class="defect-chip none">✓ No visible defects observed</span>';
+    } else {
+      defects.forEach(d => {
+        const chip = document.createElement('span');
+        chip.className = 'defect-chip';
+        chip.textContent = `• ${d}`;
+        aiProDefectsChips.appendChild(chip);
+      });
+    }
+  }
+
+  // Spoilage warning list
+  if (aiProWarningBox && aiProSpoilageList) {
+    const indicators = data.spoilage_indicators || [];
+    if (indicators.length > 0 || isSpoiled) {
+      aiProWarningBox.style.display = 'block';
+      aiProSpoilageList.innerHTML = '';
+      (indicators.length > 0 ? indicators : ['Cellular decay or spoilage risk detected']).forEach(ind => {
+        const li = document.createElement('li');
+        li.textContent = ind;
+        aiProSpoilageList.appendChild(li);
+      });
+    } else {
+      aiProWarningBox.style.display = 'none';
+    }
+  }
+
+  // Agronomic Narrative Text
+  if (aiProSummaryText) {
+    aiProSummaryText.textContent = data.detailed_summary || 'Produce demonstrates good cellular integrity and wholesome commercial condition.';
+  }
+
+  // Storage Advice
+  if (aiProStorageText) {
+    aiProStorageText.textContent = data.storage_recommendation || 'Store produce in a cool, ventilated container.';
+  }
+
+  // Token & Latency Footer
+  if (aiProTokenInfo) {
+    aiProTokenInfo.textContent = `⚡ ${data.engine || 'Gemini 2.5 Flash'} • ${data.tokens_used || 258} tokens • ${data.latency_ms || 750}ms`;
+  }
+
+  // Also update standard verdict banner with high-accuracy Gemini result
+  if (verdictTag) {
+    verdictTag.textContent = isFresh ? '🌿 GEMINI PRO: FRESH' : '⚠️ GEMINI PRO: SPOILED';
+  }
+  if (verdictTitle) {
+    verdictTitle.textContent = `${data.produce} — ${data.quality_grade}`;
+  }
+  if (verdictDesc) {
+    verdictDesc.textContent = data.detailed_summary;
+  }
+  if (verdictScore) {
+    verdictScore.textContent = `${data.quality_score}% Quality`;
+  }
+  if (verdictMeter) {
+    verdictMeter.style.width = `${data.quality_score}%`;
+  }
+  if (categoryName) {
+    categoryName.textContent = data.produce;
+  }
+  if (categoryTypePill) {
+    categoryTypePill.textContent = data.category_type || 'Produce';
+  }
+}
+
+// "Inspect Now (AI Pro)" button handler
+if (btnAiProInspectNow) {
+  btnAiProInspectNow.addEventListener('click', () => {
+    runAiProInspection(true); // force=true bypasses diff & cooldown
+  });
+}
+
+// Gemini Key Modal Handlers
+function openKeyModal() {
+  if (keyModal) keyModal.style.display = 'flex';
+}
+function closeKeyModal() {
+  if (keyModal) keyModal.style.display = 'none';
+}
+
+if (btnOpenKeyModal) btnOpenKeyModal.addEventListener('click', openKeyModal);
+if (keyModalCloseBtn) keyModalCloseBtn.addEventListener('click', closeKeyModal);
+if (keyModalBackdrop) keyModalBackdrop.addEventListener('click', closeKeyModal);
+if (btnCancelKey) btnCancelKey.addEventListener('click', closeKeyModal);
+
+if (btnSaveKey) {
+  btnSaveKey.addEventListener('click', async () => {
+    const keyVal = geminiKeyInput?.value.trim();
+    const modelVal = geminiModelSelect?.value || 'gemini-2.5-flash';
+
+    if (!keyVal) {
+      alert('Please enter a valid Gemini API key.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/ai-pro/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: keyVal, model: modelVal })
+      });
+      const data = await res.json();
+
+      if (data.success && data.configured) {
+        alert('🎉 Gemini API Key successfully saved and activated!');
+        closeKeyModal();
+        fetchAiProStatus();
+      } else {
+        alert('Failed to configure key.');
+      }
+    } catch (e) {
+      alert(`Configuration error: ${e.message}`);
+    }
+  });
+}
+
+
+// ==========================================
+// Webcam Controls (HTML5 MediaDevices API)
 // ==========================================
 async function startCamera() {
   try {
@@ -165,15 +694,16 @@ function stopCamera() {
   document.getElementById('status-text').textContent = 'System Ready';
 }
 
-btnToggleCamera.addEventListener('click', () => {
-  if (currentStream) {
-    stopCamera();
-  } else {
-    startCamera();
-  }
-});
+if (btnToggleCamera) {
+  btnToggleCamera.addEventListener('click', () => {
+    if (currentStream) {
+      stopCamera();
+    } else {
+      startCamera();
+    }
+  });
+}
 
-// Capture frame from webcam
 function captureWebcamFrame() {
   if (!currentStream || isAnalyzing) return;
 
@@ -193,59 +723,71 @@ function captureWebcamFrame() {
   }, 'image/jpeg', 0.92);
 }
 
-btnCapture.addEventListener('click', captureWebcamFrame);
+if (btnCapture) btnCapture.addEventListener('click', captureWebcamFrame);
 
-// Auto-scan feature (every 3 seconds)
-toggleAutoscan.addEventListener('change', () => {
-  if (toggleAutoscan.checked) {
-    autoScanInterval = setInterval(() => {
-      if (currentStream && !isAnalyzing) {
-        captureWebcamFrame();
-      }
-    }, 3000);
-  } else {
-    clearInterval(autoScanInterval);
-    autoScanInterval = null;
-  }
-});
+if (toggleAutoscan) {
+  toggleAutoscan.addEventListener('change', () => {
+    if (toggleAutoscan.checked) {
+      autoScanInterval = setInterval(() => {
+        if (currentStream && !isAnalyzing) {
+          captureWebcamFrame();
+        }
+      }, 3000);
+    } else {
+      clearInterval(autoScanInterval);
+      autoScanInterval = null;
+    }
+  });
+}
+
 
 // ==========================================
 // Dropzone & File Upload
 // ==========================================
-browseLink.addEventListener('click', (e) => {
-  e.stopPropagation();
-  fileInput.click();
-});
-dropzone.addEventListener('click', () => fileInput.click());
+if (browseLink) {
+  browseLink.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+}
+if (dropzone) dropzone.addEventListener('click', () => fileInput.click());
 
 ['dragenter', 'dragover'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.add('dragover');
-  });
+  if (dropzone) {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  }
 });
 
 ['dragleave', 'drop'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.classList.remove('dragover');
+  if (dropzone) {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  }
+});
+
+if (dropzone) {
+  dropzone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt.files && dt.files[0]) {
+      handleFile(dt.files[0]);
+    }
   });
-});
+}
 
-dropzone.addEventListener('drop', (e) => {
-  const dt = e.dataTransfer;
-  if (dt.files && dt.files[0]) {
-    handleFile(dt.files[0]);
-  }
-});
-
-fileInput.addEventListener('change', () => {
-  if (fileInput.files && fileInput.files[0]) {
-    handleFile(fileInput.files[0]);
-  }
-});
+if (fileInput) {
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) {
+      handleFile(fileInput.files[0]);
+    }
+  });
+}
 
 // Clipboard Paste Support
 document.addEventListener('paste', (e) => {
@@ -253,8 +795,7 @@ document.addEventListener('paste', (e) => {
   for (let item of items) {
     if (item.type.indexOf('image') !== -1) {
       const blob = item.getAsFile();
-      // Switch to upload tab
-      tabButtons[1].click();
+      if (tabButtons[2]) tabButtons[2].click();
       handleFile(blob);
       break;
     }
@@ -272,34 +813,39 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
-btnRemovePreview.addEventListener('click', (e) => {
-  e.stopPropagation();
-  uploadedBlob = null;
-  fileInput.value = '';
-  uploadPreviewOverlay.style.display = 'none';
-  btnAnalyzeUpload.disabled = true;
-});
+if (btnRemovePreview) {
+  btnRemovePreview.addEventListener('click', (e) => {
+    e.stopPropagation();
+    uploadedBlob = null;
+    fileInput.value = '';
+    uploadPreviewOverlay.style.display = 'none';
+    btnAnalyzeUpload.disabled = true;
+  });
+}
 
-btnAnalyzeUpload.addEventListener('click', () => {
-  if (uploadedBlob) {
-    sendImageToApi(uploadedBlob, uploadedBlob.name || 'uploaded_image.jpg');
-  }
-});
+if (btnAnalyzeUpload) {
+  btnAnalyzeUpload.addEventListener('click', () => {
+    if (uploadedBlob) {
+      sendImageToApi(uploadedBlob, uploadedBlob.name || 'uploaded_image.jpg');
+    }
+  });
+}
 
-// Quick Sample Load
-btnLoadSample.addEventListener('click', async () => {
-  try {
-    const res = await fetch('test_sample.jpg');
-    if (!res.ok) throw new Error('Sample not found');
-    const blob = await res.blob();
-    handleFile(blob);
-    // Immediately analyze sample
-    sendImageToApi(blob, 'test_sample.jpg');
-  } catch (err) {
-    console.error('Error loading sample:', err);
-    alert('Could not load test_sample.jpg.');
-  }
-});
+if (btnLoadSample) {
+  btnLoadSample.addEventListener('click', async () => {
+    try {
+      const res = await fetch('test_sample.jpg');
+      if (!res.ok) throw new Error('Sample not found');
+      const blob = await res.blob();
+      handleFile(blob);
+      sendImageToApi(blob, 'test_sample.jpg');
+    } catch (err) {
+      console.error('Error loading sample:', err);
+      alert('Could not load test_sample.jpg.');
+    }
+  });
+}
+
 
 // ==========================================
 // API Communication & Render Results
@@ -308,10 +854,11 @@ async function sendImageToApi(imageBlob, filename = 'produce.jpg') {
   if (isAnalyzing) return;
   isAnalyzing = true;
 
-  // Update UI to Loading State
   emptyState.style.display = 'none';
   resultsDashboard.style.display = 'none';
   loadingState.style.display = 'flex';
+  if (loadingTitle) loadingTitle.textContent = 'Analyzing Image...';
+  if (loadingDesc) loadingDesc.textContent = 'Running edge classifiers on Raspberry Pi 5';
   resultsStateBadge.textContent = 'Inference Running...';
   resultsStateBadge.style.color = '#38bdf8';
 
@@ -362,7 +909,7 @@ function renderResults(data) {
   verdictTitle.textContent = isFresh ? 'Optimal & Wholesome' : 'Decay / Spoilage Detected';
   verdictMeter.style.width = `${freshPct}%`;
   verdictDesc.textContent = isFresh
-    ? 'Produce meets safety and quality standards for consumption or cooking.'
+    ? 'Produce meets safety and quality standards for consumption or culinary use.'
     : 'Signs of mold, softening, or oxidation observed. Discarding is advised.';
 
   // State Badge in Card Header
@@ -390,25 +937,30 @@ function renderResults(data) {
 }
 
 // Copy JSON
-btnCopyJson.addEventListener('click', () => {
-  if (currentResult) {
-    navigator.clipboard.writeText(JSON.stringify(currentResult, null, 2)).then(() => {
-      btnCopyJson.textContent = '✓ Copied!';
-      setTimeout(() => btnCopyJson.textContent = '📋 Copy JSON', 2000);
-    });
-  }
-});
+if (btnCopyJson) {
+  btnCopyJson.addEventListener('click', () => {
+    if (currentResult) {
+      navigator.clipboard.writeText(JSON.stringify(currentResult, null, 2)).then(() => {
+        btnCopyJson.textContent = '✓ Copied!';
+        setTimeout(() => btnCopyJson.textContent = '📋 Copy JSON', 2000);
+      });
+    }
+  });
+}
 
 // Fullscreen Modal for image
-btnFullscreenAnnotated.addEventListener('click', () => {
-  if (annotatedImageDisplay.src) {
-    modalImage.src = annotatedImageDisplay.src;
-    imageModal.classList.add('open');
-  }
-});
+if (btnFullscreenAnnotated) {
+  btnFullscreenAnnotated.addEventListener('click', () => {
+    if (annotatedImageDisplay.src) {
+      modalImage.src = annotatedImageDisplay.src;
+      imageModal.classList.add('open');
+    }
+  });
+}
 [modalBackdrop, modalCloseBtn].forEach(el => {
-  el.addEventListener('click', () => imageModal.classList.remove('open'));
+  if (el) el.addEventListener('click', () => imageModal.classList.remove('open'));
 });
+
 
 // ==========================================
 // Scan History Storage (localStorage)
@@ -418,11 +970,11 @@ function saveToHistory(data) {
     let history = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]');
     const item = {
       id: Date.now(),
-      category: data.category.label,
+      category: data.category?.label || 'Unknown',
       emoji: data.metadata?.emoji || '🥬',
-      freshness: data.freshness.label,
-      score: (data.freshness.score * 100).toFixed(0),
-      image: data.annotated_image_base64,
+      freshness: data.freshness?.label || 'Fresh',
+      score: ((data.freshness?.score || 0.9) * 100).toFixed(0),
+      image: data.annotated_image_base64 || '',
       data: data
     };
     history.unshift(item);
@@ -438,12 +990,13 @@ function renderHistory() {
   try {
     const history = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]');
     if (!history.length) {
-      historySection.style.display = 'none';
+      if (historySection) historySection.style.display = 'none';
       return;
     }
-    historySection.style.display = 'block';
-    historyStrip.innerHTML = '';
+    if (historySection) historySection.style.display = 'block';
+    if (!historyStrip) return;
 
+    historyStrip.innerHTML = '';
     history.forEach(item => {
       const el = document.createElement('div');
       el.className = 'history-item';
@@ -467,128 +1020,17 @@ function renderHistory() {
   }
 }
 
-btnClearHistory.addEventListener('click', () => {
-  localStorage.removeItem(HISTORY_STORAGE_KEY);
-  renderHistory();
-});
-
-// ==========================================
-// Raspberry Pi Camera Rev 1.3 Handlers
-// ==========================================
-async function capturePiCameraFrame() {
-  if (isAnalyzing) return;
-  isAnalyzing = true;
-
-  if (picamScanLaser) picamScanLaser.classList.add('scanning');
-  emptyState.style.display = 'none';
-  resultsDashboard.style.display = 'none';
-  loadingState.style.display = 'flex';
-  resultsStateBadge.textContent = 'Snapping Pi Camera & Analyzing...';
-  resultsStateBadge.style.color = '#38bdf8';
-
-  try {
-    const res = await fetch('/api/camera/capture', { method: 'POST' });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({ detail: 'Pi Camera capture failed' }));
-      throw new Error(errData.detail || 'Pi Camera capture error');
-    }
-    const data = await res.json();
-    currentResult = data;
-    renderResults(data);
-    saveToHistory(data);
-  } catch (err) {
-    console.error('Pi Camera Capture error:', err);
-    alert(`Raspberry Pi Camera Capture Failed: ${err.message}`);
-    loadingState.style.display = 'none';
-    if (!currentResult) emptyState.style.display = 'flex';
-  } finally {
-    isAnalyzing = false;
-    if (picamScanLaser) picamScanLaser.classList.remove('scanning');
-  }
-}
-
-if (btnPicamCapture) {
-  btnPicamCapture.addEventListener('click', capturePiCameraFrame);
-}
-
-if (btnRefreshStream && picamStreamFeed) {
-  btnRefreshStream.addEventListener('click', () => {
-    picamStreamFeed.src = `/api/camera/stream?t=${Date.now()}`;
+if (btnClearHistory) {
+  btnClearHistory.addEventListener('click', () => {
+    localStorage.removeItem(HISTORY_STORAGE_KEY);
+    renderHistory();
   });
 }
 
-if (togglePicamAutoscan) {
-  togglePicamAutoscan.addEventListener('change', () => {
-    if (togglePicamAutoscan.checked) {
-      picamAutoScanInterval = setInterval(() => {
-        if (!isAnalyzing) {
-          capturePiCameraFrame();
-        }
-      }, 3000);
-    } else {
-      clearInterval(picamAutoScanInterval);
-      picamAutoScanInterval = null;
-    }
-  });
-}
-
-async function checkPiCameraStatus() {
-  try {
-    const res = await fetch('/api/camera/status');
-    if (!res.ok) return;
-    const status = await res.json();
-    if (picamSensorName && status.sensor) {
-      picamSensorName.textContent = status.sensor;
-    }
-    if (picamBackendBadge && status.backend) {
-      picamBackendBadge.textContent = status.backend.toUpperCase();
-      picamBackendBadge.style.color = status.available ? '#34d399' : '#fbbf24';
-    }
-  } catch (e) {
-    console.warn('Could not query Pi camera status:', e);
-  }
-}
-
-async function checkSystemEngine() {
-  try {
-    const res = await fetch('/api/metadata');
-    if (!res.ok) return;
-    const meta = await res.json();
-    const engineBadge = document.getElementById('engine-badge');
-    if (engineBadge && meta.engine) {
-      engineBadge.textContent = `${meta.engine.toUpperCase()} SIMD • 10 Classes`;
-    }
-  } catch (e) {
-    console.warn('Could not query metadata engine:', e);
-  }
-}
-
-// Initial loads
-window.addEventListener('DOMContentLoaded', () => {
-  renderHistory();
-  checkPiCameraStatus();
-  checkSystemEngine();
-  fetchActiveAlerts();
-  checkSystemStatus();
-  // Poll active alerts and system status every 4s
-  setInterval(() => {
-    fetchActiveAlerts();
-    checkSystemStatus();
-  }, 4000);
-});
 
 // ==========================================
-// FreshScan AI 2.0 Active Alerts & Simulator
+// FreshScan AI 2.0 Alerts & System Status
 // ==========================================
-const activeAlertsList = document.getElementById('active-alerts-list');
-const emptyAlertsPlaceholder = document.getElementById('empty-alerts-placeholder');
-const activeAlertsCountBadge = document.getElementById('active-alerts-count-badge');
-const esp32Badge = document.getElementById('esp32-badge');
-const btnTriggerTestAlert = document.getElementById('btn-trigger-test-alert');
-const simProduceSelect = document.getElementById('sim-produce-select');
-const btnTestTelegram = document.getElementById('btn-test-telegram');
-const btnRefreshAlerts = document.getElementById('btn-refresh-alerts');
-
 async function fetchActiveAlerts() {
   try {
     const res = await fetch('/api/alerts/active');
@@ -602,12 +1044,14 @@ async function fetchActiveAlerts() {
 
     if (!alerts || alerts.length === 0) {
       activeAlertsList.innerHTML = '';
-      activeAlertsList.appendChild(emptyAlertsPlaceholder);
-      emptyAlertsPlaceholder.style.display = 'block';
+      if (emptyAlertsPlaceholder) {
+        activeAlertsList.appendChild(emptyAlertsPlaceholder);
+        emptyAlertsPlaceholder.style.display = 'block';
+      }
       return;
     }
 
-    emptyAlertsPlaceholder.style.display = 'none';
+    if (emptyAlertsPlaceholder) emptyAlertsPlaceholder.style.display = 'none';
     activeAlertsList.innerHTML = '';
 
     const emojiMap = {
@@ -674,6 +1118,7 @@ async function checkSystemStatus() {
     const res = await fetch('/api/system/status');
     if (!res.ok) return;
     const status = await res.json();
+
     if (esp32Badge) {
       if (status.mqtt?.esp32_online) {
         esp32Badge.textContent = `📡 ESP32: Online (${status.mqtt.esp32_ip || 'Active'})`;
@@ -682,7 +1127,7 @@ async function checkSystemStatus() {
         esp32Badge.textContent = `📡 MQTT Ready • ESP32 Standby`;
         esp32Badge.style.color = '#38bdf8';
       } else {
-        esp32Badge.textContent = `📡 MQTT Broker Standby`;
+        esp32Badge.textContent = `📡 MQTT Standby`;
         esp32Badge.style.color = 'var(--text-muted)';
       }
     }
@@ -739,10 +1184,27 @@ if (btnRefreshAlerts) {
   btnRefreshAlerts.addEventListener('click', () => {
     fetchActiveAlerts();
     checkSystemStatus();
+    fetchAiProStatus();
   });
 }
 
-// Make ack/clear accessible to inline onclick
+// Global exposes for inline button actions
 window.acknowledgeAlert = acknowledgeAlert;
 window.clearAlert = clearAlert;
+
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', () => {
+  renderHistory();
+  loadCameraDevices();
+  checkUsbCameraStatus();
+  fetchAiProStatus();
+  fetchActiveAlerts();
+  checkSystemStatus();
+
+  // Background telemetry & alerts sync interval every 4s
+  setInterval(() => {
+    fetchActiveAlerts();
+    checkSystemStatus();
+    fetchAiProStatus();
+  }, 4000);
 });

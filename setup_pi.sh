@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# FreshScan AI - Raspberry Pi 4B + Camera Rev 1.3 Setup Script
+# FreshScan AI 2.0 - Raspberry Pi 5 + External USB Camera Setup Script
 # ==============================================================================
 set -e
 
 echo "🍓 ============================================================"
-echo "   FreshScan AI: Raspberry Pi 4B (4GB) Setup Script"
-echo "   Sensor: Raspberry Pi Camera Module Rev 1.3 (OV5647)"
+echo "   FreshScan AI 2.0: Raspberry Pi 5 Setup Script"
+echo "   Hardware: Raspberry Pi 5 (ARM Cortex-A76 Quad-Core)"
+echo "   Sensor  : External USB Camera (V4L2 / UVC)"
+echo "   Cloud AI: Gemini AI Pro (Multimodal Quality Inspection)"
 echo "🍓 ============================================================"
 
 ARCH=$(uname -m)
@@ -15,92 +17,73 @@ echo "🔍 Detected CPU Architecture: $ARCH"
 if [ "$ARCH" != "aarch64" ]; then
   echo "⚠️ WARNING: You are running a 32-bit OS ($ARCH)."
   echo "   It is strongly recommended to use Raspberry Pi OS 64-bit (aarch64) for"
-  echo "   optimal TensorFlow Lite performance and pre-built Python wheels."
+  echo "   optimal ARMv8.2-A SIMD acceleration and pre-built Python wheels."
 fi
 
-# 1. Update and install essential apt packages
+# 1. Update and install essential apt packages for Raspberry Pi 5
 echo ""
-echo "📦 [1/5] Installing Raspberry Pi OS system dependencies..."
+echo "📦 [1/4] Installing Raspberry Pi OS system dependencies for USB camera & MQTT..."
 sudo apt update
 sudo apt install -y \
   python3-pip \
   python3-venv \
-  python3-picamera2 \
-  libcamera-tools \
+  python3-dev \
   v4l-utils \
+  libv4l-dev \
   libgl1 \
   libglib2.0-0 \
-  libatlas-base-dev \
   mosquitto \
   mosquitto-clients
 
 # Enable and start Mosquitto MQTT broker
 sudo systemctl enable --now mosquitto || true
 
-# 2. Check Camera Configuration in config.txt
+# 2. Check Video4Linux USB camera detection
 echo ""
-echo "📷 [2/5] Checking Raspberry Pi Camera Rev 1.3 hardware configuration..."
-CONFIG_FILE="/boot/firmware/config.txt"
-if [ ! -f "$CONFIG_FILE" ]; then
-  CONFIG_FILE="/boot/config.txt"
+echo "📷 [2/4] Checking connected USB video devices..."
+if [ -d "/sys/class/video4linux" ]; then
+  echo "  Discovered Video4Linux nodes:"
+  for dev in /sys/class/video4linux/video*; do
+    if [ -f "$dev/name" ]; then
+      NODE_NAME=$(basename "$dev")
+      NAME=$(cat "$dev/name")
+      echo "    • /dev/$NODE_NAME: $NAME"
+    fi
+  done
+else
+  echo "  ℹ No /sys/class/video4linux found. Plug in an external USB camera."
 fi
 
-if [ -f "$CONFIG_FILE" ]; then
-  if grep -q "camera_auto_detect=1" "$CONFIG_FILE" || grep -q "dtoverlay=ov5647" "$CONFIG_FILE"; then
-    echo "  ✓ Camera overlay found in $CONFIG_FILE."
-  else
-    echo "  ℹ Adding camera overlay to $CONFIG_FILE..."
-    echo "dtoverlay=ov5647" | sudo tee -a "$CONFIG_FILE" >/dev/null
-    echo "  ✓ Added 'dtoverlay=ov5647' to $CONFIG_FILE (reboot may be required if not already loaded)."
-  fi
-fi
-
-# 3. Increase swapfile space to ensure smooth package installations
+# 3. Setup Python Virtual Environment
 echo ""
-echo "🧠 [3/5] Checking swap configuration..."
-if [ -f /etc/dphys-swapfile ]; then
-  CURRENT_SWAP=$(grep -oP '^CONF_SWAPSIZE=\K[0-9]+' /etc/dphys-swapfile || echo "100")
-  if [ "$CURRENT_SWAP" -lt 1024 ]; then
-    echo "  ℹ Increasing swap size to 1024MB to prevent out-of-memory during pip installs..."
-    sudo dphys-swapfile swapoff || true
-    sudo sed -i 's/^CONF_SWAPSIZE=[0-9]*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
-    sudo dphys-swapfile setup || true
-    sudo dphys-swapfile swapon || true
-    echo "  ✓ Swap increased to 1024MB."
-  fi
-fi
-
-# 4. Setup Python Virtual Environment with system-site-packages for Picamera2 access
-echo ""
-echo "🐍 [4/5] Setting up Python virtual environment (with --system-site-packages for picamera2)..."
+echo "🐍 [3/4] Setting up Python virtual environment..."
 cd "$(dirname "$0")"
 
 if [ ! -d "venv" ]; then
-  python3 -m venv --system-site-packages venv
+  python3 -m venv venv
 fi
 
 . venv/bin/activate
 pip install --upgrade pip
 
-echo "📦 Installing Python requirements..."
+echo "📦 Installing Python requirements (including OpenCV & Google GenAI SDK)..."
 if [ -f "requirements-pi.txt" ]; then
   pip install -r requirements-pi.txt
 else
   pip install -r requirements.txt
 fi
 
-# 5. Run Camera Test Diagnostic
+# 4. Run USB Camera Diagnostic
 echo ""
-echo "🎯 [5/5] Running camera hardware diagnostic..."
+echo "🎯 [4/4] Running USB camera hardware diagnostics..."
 python test_camera.py
 
 echo ""
 echo "============================================================"
-echo "🎉 Setup complete! You are ready to run FreshScan AI."
-echo ""
-echo "To start the web server:"
-echo "   ./run.sh"
-echo ""
-echo "To run a single capture directly from terminal:"
-echo "   python capture_and_classify.py"
+echo "🎉 Setup complete on Raspberry Pi 5!"
+echo "   To start the web dashboard:"
+echo "     ./run.sh"
+echo "   Or start API directly:"
+echo "     python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000"
 echo "============================================================"
+echo ""

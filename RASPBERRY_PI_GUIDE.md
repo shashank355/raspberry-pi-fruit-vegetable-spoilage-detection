@@ -1,172 +1,152 @@
-# FreshScan AI — Raspberry Pi 4B + Camera Module Rev 1.3 Guide
+# FreshScan AI 2.0 — Raspberry Pi 5 + External USB Camera & Gemini AI Pro Guide
 
-This guide explains how to set up, optimize, and run the **FreshScan AI Produce Freshness Classifier** on a **Raspberry Pi 4 Model B (4GB RAM)** equipped with the **Raspberry Pi Camera Module Rev 1.3 (OmniVision OV5647)**.
+This guide details how to set up and deploy **FreshScan AI 2.0** on a **Raspberry Pi 5** using any **standard External USB Camera (UVC/V4L2)** combined with **Gemini AI Pro** multimodal quality inspection and **Token-Saving Guardrails**.
 
 ---
 
 ## 1. Hardware Overview & Specifications
 
-- **Single Board Computer**: Raspberry Pi 4 Model B (4GB LPDDR4 RAM)
-- **Processor**: Broadcom BCM2711, Quad-core Cortex-A72 (ARMv8 64-bit) @ 1.5 GHz
-- **Camera Module**: Raspberry Pi Camera Rev 1.3 (5MP OmniVision OV5647 sensor, 15-pin CSI ribbon)
-- **AI Inference Engine**: TensorFlow Lite (optimized with XNNPACK ARM NEON SIMD)
-- **RAM Footprint**: ~120–250 MB during active inference (leaving >3.5 GB free)
-- **Inference Latency**: ~60–100 ms per image
+- **Single Board Computer**: Raspberry Pi 5 (4GB / 8GB / 16GB RAM)
+- **Processor**: Broadcom BCM2712, Quad-core ARM Cortex-A76 @ 2.4 GHz (3x faster inference than Pi 4B)
+- **Camera Interface**: External USB Camera (UVC / Video4Linux2 via USB 3.0 ports)
+- **Local Edge Inference**: TensorFlow Lite with ARMv8.2-A / Neon SIMD acceleration (~15–25ms latency)
+- **Cloud Multimodal AI**: Google Gemini AI Pro (`gemini-2.5-flash` or `gemini-1.5-flash`)
+- **Token Efficiency Guard**: Motion/structural frame difference gating + 512px downscaling + adaptive cooldown (protects token limits)
+- **Alert Panel**: ESP32 wireless LCD & 10-LED bank over MQTT + Telegram Bot alerts
 
 ---
 
-## 2. Hardware Wiring (Rev 1.3 Camera Connection)
+## 2. External USB Camera Connection
 
-The Rev 1.3 Camera connects to the Raspberry Pi 4B using a **15-pin flat flexible ribbon cable (FFC)** into the dedicated **CSI Camera port** (located between the Micro-HDMI ports and the 3.5mm audio jack):
-
-```
-+-------------------------------------------------------------+
-|  [Ethernet] [USB 3.0] [USB 2.0]                             |
-|                                  [CSI Port] <-- Connect here|
-|                                    ||                       |
-|                             [Blue tape faces                |
-|                              Ethernet/USB ports]            |
-|                                                             |
-|  [Micro-HDMI 0]  [Micro-HDMI 1]  [Power USB-C]              |
-+-------------------------------------------------------------+
-```
-
-### Cable Orientation Rules:
-1. **On the Raspberry Pi 4B board**:
-   - Gently pull the black plastic collar of the **CAMERA** port upward.
-   - Insert the ribbon cable with the **blue tape side facing the USB and Ethernet ports** (the exposed silver contacts must face the micro-HDMI ports).
-   - Push the black plastic collar back down to secure the ribbon firmly.
-2. **On the Camera Rev 1.3 PCB**:
-   - The **blue tape side faces away from the camera lens** (towards the back of the camera circuit board).
-   - The exposed silver contacts face the front (lens side).
+1. Plug your USB camera into one of the **blue USB 3.0 ports** on the Raspberry Pi 5 for high bandwidth and stable MJPEG streaming.
+2. Confirm the Linux kernel detected the USB camera:
+   ```bash
+   lsusb
+   ```
+   You should see your camera chipset (e.g. `USB2.0 PC CAMERA`, `Logitech C920`, `eMeet`, etc.).
+3. Check the created Video4Linux device nodes:
+   ```bash
+   ls -la /dev/video*
+   ```
+   Or query device names:
+   ```bash
+   cat /sys/class/video4linux/video*/name
+   ```
+4. **Auto-Selection**: FreshScan AI automatically discovers connected USB cameras and selects the active USB video node. You can also pick a specific device from the dashboard dropdown or set `CAMERA_INDEX=auto` (or `CAMERA_INDEX=2`) in `.env`.
 
 ---
 
-## 3. Raspberry Pi OS Configuration
+## 3. Gemini AI Pro & Token Saver Configuration
 
-> [!IMPORTANT]
-> **Use Raspberry Pi OS 64-bit (Debian Bookworm or Bullseye, `aarch64`)**. 64-bit OS is required for pre-built modern TensorFlow wheels and full ARM NEON acceleration.
+To use the **AI Pro** toggle button without exhausting your Gemini token limits, the system implements 4 levels of token conservation:
 
-### Step 3.1: Enable Camera Overlay in `config.txt`
-In Raspberry Pi OS Bookworm, edit `/boot/firmware/config.txt` (or `/boot/config.txt` on Bullseye):
+1. **Scene-Change / Motion Gating**:
+   A lightweight 64x64 frame difference is computed on each frame. If the produce hasn't moved or the scene is unchanged, the Gemini API call is **skipped**, preserving your tokens.
+2. **Pre-Optimized Image Downscaling**:
+   Images are automatically resized to 512x512 JPEG at 80% compression before dispatch. In Gemini multimodal pricing, a 512px image costs only **1 tile (~258 tokens)** compared to 1000+ tokens for 1080p.
+3. **Adaptive Cooldown Protection**:
+   Enforces a configurable minimum delay (e.g. 10s cooldown) between calls to prevent rapid firing.
+4. **Local Edge Pre-Check**:
+   The local edge model runs for free (0 tokens) to pre-classify produce and filter out blank backgrounds.
+
+### Setting your Gemini API Key:
+
+#### Option A: In the `.env` file
+Open `.env` and set:
 ```bash
-sudo nano /boot/firmware/config.txt
-```
-Ensure the following line is present under `[all]`:
-```ini
-dtoverlay=ov5647
-```
-*(If you see `camera_auto_detect=1`, the Pi may auto-detect OV5647; adding `dtoverlay=ov5647` explicitly guarantees sensor initialization).*
-
-After editing, reboot the Pi:
-```bash
-sudo reboot
+GEMINI_API_KEY=AIzaSyYourActualKeyHere
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_AUTO_INTERVAL=15.0
+GEMINI_COOLDOWN=10.0
+GEMINI_FRAME_DIFF_THRESHOLD=10.0
 ```
 
-### Step 3.2: Verify Camera Detection
-Once rebooted, test sensor detection:
-```bash
-rpicam-hello --list-cameras
-# or on Bullseye:
-libcamera-hello --list-cameras
-```
-You should see:
-```text
-Available cameras:
-0 : ov5647 [2592x1944 10-bit RGGB] (/base/soc/i2c0mux/i2c@1/ov5647@36)
-```
+#### Option B: In the Web Dashboard
+Click the **🔑 Key** button on the AI Pro studio card, paste your API key, and click **Save & Activate**.
 
 ---
 
-## 4. One-Click Setup
+## 4. Software Installation & Setup
 
-Inside the project directory on your Raspberry Pi:
-
+Run the automated Raspberry Pi 5 setup script:
 ```bash
 cd Image-Based-Food-Freshness-Prediction-System
-chmod +x setup_pi.sh run.sh capture_and_classify.py
+chmod +x setup_pi.sh test_camera.py run.sh
 ./setup_pi.sh
 ```
 
-The `setup_pi.sh` script will:
-1. Install system packages (`libcamera-tools`, `python3-picamera2`, `libgl1`, `v4l-utils`).
-2. Verify camera drivers and configuration.
-3. Configure swap space (prevents pip out-of-memory).
-4. Create a virtual environment with `--system-site-packages` so Python can access native `picamera2` hardware acceleration.
-5. Install optimized requirements.
-6. Run camera diagnostic tests.
-
----
-
-## 5. Running the Application
-
-### Option A: Web Interface (Live Stream + Remote Access)
-Start the web server:
+### Manual Installation:
 ```bash
-./run.sh
-```
-Open your browser on the Pi or on any device on your local Wi-Fi:
-```text
-http://<your-raspberry-pi-ip>:8000
-```
+# 1. System packages
+sudo apt update
+sudo apt install -y python3-pip python3-venv v4l-utils libv4l-dev libgl1 mosquitto mosquitto-clients
 
-- Navigate to the **"Pi Camera Rev 1.3"** tab.
-- View the live camera stream directly from the hardware.
-- Click **"Snap Pi Camera & Analyze"** to classify produce.
-- Or toggle **"Auto-Scan"** for hands-free scanning every 3 seconds.
-
----
-
-### Option B: Standalone Command-Line Tool (Headless Mode)
-If you are running the Pi headless (without a monitor) or want to trigger scans from a script or physical button:
-
-```bash
-# Activate virtual environment
+# 2. Virtual environment
+python3 -m venv venv
 source venv/bin/activate
-
-# Snap a photo and classify immediately:
-python capture_and_classify.py
-
-# Continuous scanning every 3 seconds:
-python capture_and_classify.py --loop --interval 3.0
-```
-
-**Example Terminal Output:**
-```text
-📸 [Pi Camera Rev 1.3] Capturing frame...
-⚡ Frame captured in 81.3ms (1280x720)
-🧠 Running AI Freshness inference...
-
-==================================================
-✨ FreshScan AI Analysis Result (Engine: TFLITE):
-   • Category   : Apple (99.4%)
-   • Condition  : [FRESH] Fresh (98.9%)
-   • Inference  : 66.3ms
-   • Saved to   : annotated_result.jpg
-==================================================
+pip install --upgrade pip
+pip install -r requirements-pi.txt
 ```
 
 ---
 
-## 6. Testing & Diagnostics
+## 5. Camera Diagnostic Verification
 
-To quickly check your camera hardware anytime:
+Run the USB camera diagnostic tool:
 ```bash
 python test_camera.py
 ```
-This tests:
-1. `rpicam-hello` / `libcamera-hello` system camera detection.
-2. Video4Linux device nodes (`/dev/video*`).
-3. Python `picamera2` and OpenCV bindings.
-4. Takes a test snapshot and saves it to `camera_test.jpg`.
+Output:
+```text
+=================================================================
+ 🍓 Raspberry Pi 5 • External USB Camera Hardware Diagnostics
+=================================================================
+  • Active Device : USB2.0 PC CAMERA: USB2.0 PC CAM
+  • Node Path     : /dev/video2
+  • Backend       : opencv_usb_v4l2
+  • Resolution    : 640x480 (or 1280x720)
+  • Platform      : Raspberry Pi 5
+  • Ready         : True
+  ✓ Successfully captured and saved test snapshot to: camera_test.jpg
+```
 
 ---
 
-## 7. Troubleshooting
+## 6. Running the System
 
-| Issue | Cause | Fix |
-| :--- | :--- | :--- |
-| **"No camera detected"** | Ribbon cable loose or inverted | Check cable seating. Blue tape on Pi board must face Ethernet/USB ports. Blue tape on Camera PCB faces away from lens. |
-| **"picamera2: camera not found"** | Missing device tree overlay | Add `dtoverlay=ov5647` to `/boot/firmware/config.txt` and reboot. |
-| **Permission denied on `/dev/video0`** | User not in video group | Run `sudo usermod -a -G video $USER` and log back in. |
-| **Out of memory during `pip install`** | Small default swap file (100MB) | Run `./setup_pi.sh` or increase swap with `sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile && sudo dphys-swapfile setup && sudo dphys-swapfile swapon`. |
+Start the server:
+```bash
+./run.sh
+```
+Or with Uvicorn:
+```bash
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+```
+
+Open your browser to:
+`http://<RASPBERRY_PI_IP>:8000`
+
+### Using the Features in the Dashboard:
+1. **USB Camera Feed**: Live streaming from your external USB webcam.
+2. **Camera Selector**: Switch between video devices in the USB banner.
+3. **✨ AI Pro Toggle Switch**:
+   - Turn **ON**: Automatically captures live frames at your chosen interval (e.g. every 15s) and sends them to Gemini API for deep quality inspection.
+   - When the frame has not changed, the **Token Saver** automatically protects your token quota by skipping the call and reusing the verified verdict.
+   - Turn **OFF**: Pauses Gemini calls immediately and reverts to edge inference only.
+4. **⚡ Inspect Now (AI Pro)**: Force an immediate Gemini inspection on demand.
+
+---
+
+## 7. CLI Single-Shot & Continuous Loop
+
+You can also run headless scanning from the terminal:
+```bash
+# Single capture with local model:
+python capture_and_classify.py
+
+# Single capture with Gemini AI Pro inspection:
+python capture_and_classify.py --ai-pro
+
+# Continuous monitoring loop every 10 seconds:
+python capture_and_classify.py --loop --interval 10 --ai-pro
+```

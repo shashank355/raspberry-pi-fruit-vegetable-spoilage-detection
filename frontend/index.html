@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreshScan AI • Real-Time Produce Freshness Classifier</title>
+  <title>FreshScan AI • Real-Time Produce Freshness Classifier (RPi 5 + Gemini AI Pro)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -22,8 +22,8 @@
           🥗
         </div>
         <div>
-          <h1 class="brand-title">FreshScan <span class="gradient-text">AI</span></h1>
-          <p class="brand-tagline">Deep Learning Produce & Freshness Inspector</p>
+          <h1 class="brand-title">FreshScan <span class="gradient-text">AI 2.0</span></h1>
+          <p class="brand-tagline">Raspberry Pi 5 Edge Classifier & Gemini AI Pro Inspector</p>
         </div>
       </div>
 
@@ -32,8 +32,9 @@
           <span class="status-dot"></span>
           <span id="status-text">System Ready</span>
         </div>
-        <div class="model-badge" id="hardware-badge">🍓 RPi 4B • OV5647 Ready</div>
-        <div class="model-badge" id="esp32-badge">📡 ESP32 Panel: Syncing...</div>
+        <div class="model-badge" id="hardware-badge">🍓 RPi 5 • USB Cam Ready</div>
+        <div class="model-badge ai-pro-badge" id="ai-pro-header-badge">✨ AI Pro: Ready</div>
+        <div class="model-badge" id="esp32-badge">📡 ESP32: Syncing...</div>
         <div class="model-badge" id="engine-badge">TFLite SIMD • 10 Classes</div>
       </div>
     </div>
@@ -41,17 +42,17 @@
 
   <!-- Main Container -->
   <main class="main-layout">
-    <!-- Left Column: Input Studio (Camera & Upload) -->
+    <!-- Left Column: Input Studio (USB Camera, Webcam & Upload) -->
     <section class="card input-card">
       <!-- Tabs Switcher -->
       <div class="tabs-header">
-        <button class="tab-btn active" data-tab="picam">
+        <button class="tab-btn active" data-tab="usbcam">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
           </svg>
-          Pi Camera Rev 1.3
+          USB Camera
         </button>
         <button class="tab-btn" data-tab="camera">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -70,42 +71,49 @@
         </button>
       </div>
 
-      <!-- Tab Content: Raspberry Pi Camera (Rev 1.3) -->
-      <div class="tab-content active" id="tab-picam">
-        <div class="camera-viewport" id="picam-viewport">
-          <img id="picam-stream-feed" src="/api/camera/stream" alt="Raspberry Pi Camera Feed" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.style.opacity='0.25'; document.getElementById('picam-fallback-msg').style.display='flex';" onload="this.style.opacity='1'; document.getElementById('picam-fallback-msg').style.display='none';">
+      <!-- Tab Content: External USB Camera -->
+      <div class="tab-content active" id="tab-usbcam">
+        <div class="camera-viewport" id="usbcam-viewport">
+          <img id="usbcam-stream-feed" src="/api/camera/stream" alt="External USB Camera Feed" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.style.opacity='0.25'; document.getElementById('usbcam-fallback-msg').style.display='flex';" onload="this.style.opacity='1'; document.getElementById('usbcam-fallback-msg').style.display='none';">
 
           <!-- Fallback placeholder if stream disconnected -->
-          <div class="camera-placeholder" id="picam-fallback-msg" style="display: none;">
-            <div class="cam-icon-large">🍓</div>
-            <h3>Raspberry Pi Camera Offline</h3>
-            <p>Connect Rev 1.3 camera to CSI port & restart or click "Snap Pi Camera".</p>
+          <div class="camera-placeholder" id="usbcam-fallback-msg" style="display: none;">
+            <div class="cam-icon-large">📷</div>
+            <h3>External USB Camera Offline</h3>
+            <p>Connect your USB webcam to a Raspberry Pi 5 USB 3.0 port and click "Reload Stream".</p>
           </div>
 
           <!-- Laser Scan Reticle Overlay -->
-          <div class="viewfinder-overlay" id="picam-viewfinder-overlay">
+          <div class="viewfinder-overlay" id="usbcam-viewfinder-overlay">
             <div class="corner corner-tl"></div>
             <div class="corner corner-tr"></div>
             <div class="corner corner-bl"></div>
             <div class="corner corner-br"></div>
-            <div class="scan-laser" id="picam-scan-laser"></div>
+            <div class="scan-laser" id="usbcam-scan-laser"></div>
           </div>
         </div>
 
-        <!-- Sensor Status Banner -->
+        <!-- Sensor Status & Device Switcher Banner -->
         <div class="picam-info-banner">
-          <span class="sensor-badge">📷 Hardware: <strong id="picam-sensor-name">OV5647 (Pi Camera Rev 1.3)</strong></span>
-          <span class="backend-badge" id="picam-backend-badge">Checking...</span>
+          <div class="sensor-info-left">
+            <span class="sensor-badge">📷 Device: <strong id="usbcam-sensor-name">External USB Camera</strong></span>
+            <span class="backend-badge" id="usbcam-backend-badge">Checking...</span>
+          </div>
+          <div class="sensor-info-right">
+            <select id="select-usb-device" class="device-dropdown" title="Select Video Device">
+              <option value="auto">Auto-detect USB</option>
+            </select>
+          </div>
         </div>
 
-        <!-- Pi Camera Controls -->
+        <!-- USB Camera Controls -->
         <div class="controls-bar">
-          <button class="btn btn-primary" id="btn-picam-capture">
+          <button class="btn btn-primary" id="btn-usbcam-capture">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
-            Snap Pi Camera & Analyze
+            Snap USB Camera & Analyze
           </button>
 
           <button class="btn btn-secondary" id="btn-refresh-stream" title="Refresh Live Stream Feed">
@@ -117,15 +125,15 @@
             <span>Reload Stream</span>
           </button>
 
-          <label class="toggle-container" title="Continuously snap and classify from Pi Camera every 3s">
-            <input type="checkbox" id="toggle-picam-autoscan">
+          <label class="toggle-container" title="Continuously snap and classify from USB Camera every 3s locally">
+            <input type="checkbox" id="toggle-usbcam-autoscan">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Auto-Scan</span>
+            <span class="toggle-label">Local Auto-Scan</span>
           </label>
         </div>
       </div>
 
-      <!-- Tab Content: Live Camera -->
+      <!-- Tab Content: Web Browser Webcam -->
       <div class="tab-content" id="tab-camera">
         <div class="camera-viewport" id="camera-viewport">
           <video id="webcam-feed" autoplay playsinline muted></video>
@@ -140,7 +148,7 @@
             <div class="scan-laser" id="scan-laser"></div>
             <div class="camera-placeholder" id="camera-placeholder">
               <div class="cam-icon-large">📷</div>
-              <h3>Camera Inactive</h3>
+              <h3>Browser Webcam Inactive</h3>
               <p>Click "Start Camera" to enable real-time produce scanning</p>
             </div>
           </div>
@@ -197,6 +205,78 @@
         </div>
       </div>
 
+      <!-- ======================================================= -->
+      <!-- AI PRO QUALITY INSPECTOR STUDIO (TOKEN-OPTIMIZED)      -->
+      <!-- ======================================================= -->
+      <div class="ai-pro-studio-card">
+        <div class="ai-pro-header">
+          <div class="ai-pro-title-wrap">
+            <span class="ai-pro-sparkle">✨</span>
+            <div>
+              <h3 class="ai-pro-title">Gemini AI Pro Quality Inspector</h3>
+              <p class="ai-pro-subtitle">Multimodal defect detection, quality grading & shelf-life estimation</p>
+            </div>
+          </div>
+          <!-- The Main AI Pro Toggle Switch -->
+          <label class="ai-pro-toggle-switch" title="Toggle AI Pro auto-inspection at frequent intervals">
+            <input type="checkbox" id="toggle-ai-pro">
+            <span class="ai-pro-toggle-slider"></span>
+            <span class="ai-pro-toggle-label" id="ai-pro-toggle-status-text">AI Pro: OFF</span>
+          </label>
+        </div>
+
+        <!-- Token Shield Status Banner -->
+        <div class="token-shield-banner">
+          <div class="token-shield-indicator">
+            <span class="shield-pulse"></span>
+            <span class="shield-text">🛡️ Token Saver Active: Scene-Change Gated + 512px Optimized</span>
+          </div>
+          <span class="cooldown-badge" id="cooldown-pill">Cooldown: Ready</span>
+        </div>
+
+        <!-- AI Pro Controls Row -->
+        <div class="ai-pro-controls-row">
+          <div class="ai-pro-setting-item">
+            <label for="ai-pro-interval-select">Capture Frequency:</label>
+            <select id="ai-pro-interval-select" class="ai-pro-select">
+              <option value="10">Every 10 seconds</option>
+              <option value="15" selected>Every 15s (Optimal)</option>
+              <option value="30">Every 30 seconds</option>
+              <option value="60">Every 60 seconds</option>
+            </select>
+          </div>
+
+          <div class="ai-pro-actions">
+            <button class="btn btn-ai-pro-action" id="btn-ai-pro-inspect-now" title="Bypass timer and inspect current frame with Gemini AI Pro">
+              ⚡ Inspect Now (AI Pro)
+            </button>
+            <button class="btn btn-key-config" id="btn-open-key-modal" title="Configure or update Gemini API Key">
+              🔑 Key
+            </button>
+          </div>
+        </div>
+
+        <!-- Token Telemetry Counter Grid -->
+        <div class="telemetry-grid">
+          <div class="telemetry-item">
+            <span class="telemetry-label">API Calls</span>
+            <strong class="telemetry-val" id="telemetry-calls">0</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Tokens Saved</span>
+            <strong class="telemetry-val highlight-green" id="telemetry-tokens-saved">~0</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Frames Skipped</span>
+            <strong class="telemetry-val" id="telemetry-skipped">0</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Est. Used</span>
+            <strong class="telemetry-val" id="telemetry-tokens-used">0</strong>
+          </div>
+        </div>
+      </div>
+
       <!-- Supported Produce Classes Ribbon -->
       <div class="supported-produce-section">
         <span class="section-badge">10 Supported Classes</span>
@@ -226,7 +306,7 @@
       <div class="empty-state" id="empty-state">
         <div class="empty-illustration">🔬</div>
         <h3>No Analysis Yet</h3>
-        <p>Capture a frame from your camera or upload a photo to inspect produce category and freshness level.</p>
+        <p>Snap a frame from your external USB camera or turn on "AI Pro" to automatically inspect produce quality and freshness.</p>
       </div>
 
       <!-- Loading Spinner View -->
@@ -237,8 +317,8 @@
           <div class="sonar-wave"></div>
           <span class="sonar-center">🧠</span>
         </div>
-        <h3>Analyzing Image...</h3>
-        <p>Running MobileNetV2 category & freshness classifiers</p>
+        <h3 id="loading-title">Analyzing Image...</h3>
+        <p id="loading-desc">Running Raspberry Pi 5 AI classifiers</p>
       </div>
 
       <!-- Active Results View -->
@@ -254,6 +334,62 @@
             <div class="meter-bar-fill" id="verdict-meter"></div>
           </div>
           <p class="verdict-desc" id="verdict-desc">Produce is in fresh condition, safe for consumption.</p>
+        </div>
+
+        <!-- ======================================================= -->
+        <!-- GEMINI AI PRO DEEP QUALITY INSPECTION CARD             -->
+        <!-- ======================================================= -->
+        <div class="ai-pro-result-card" id="ai-pro-result-card" style="display: none;">
+          <div class="ai-pro-result-header">
+            <div class="ai-pro-tag-row">
+              <span class="ai-pro-gradient-badge">✨ GEMINI AI PRO VERDICT</span>
+              <span class="quality-grade-badge" id="ai-pro-grade-badge">Grade A (Premium)</span>
+            </div>
+            <span class="quality-score-pill" id="ai-pro-score-pill">Score: 95/100</span>
+          </div>
+
+          <div class="ai-pro-metrics-grid">
+            <div class="metric-box">
+              <span class="metric-label">Estimated Shelf Life</span>
+              <span class="metric-value" id="ai-pro-shelf-life">⏳ 5-7 Days</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">Ripeness Stage</span>
+              <span class="metric-value" id="ai-pro-ripeness">Optimal Ripe</span>
+            </div>
+          </div>
+
+          <!-- Spoilage warning box if defects found -->
+          <div class="ai-pro-warning-box" id="ai-pro-warning-box" style="display: none;">
+            <div class="warning-title">⚠️ Spoilage Indicators Detected:</div>
+            <ul id="ai-pro-spoilage-list" class="warning-list"></ul>
+          </div>
+
+          <!-- Observed Visual Defects -->
+          <div class="defects-section" id="ai-pro-defects-section">
+            <span class="sub-label">OBSERVED VISUAL DEFECTS</span>
+            <div class="defects-chips-wrap" id="ai-pro-defects-chips">
+              <span class="defect-chip none">✓ No visible defects observed</span>
+            </div>
+          </div>
+
+          <!-- Gemini Detailed Analysis Text -->
+          <div class="ai-pro-narrative-box">
+            <span class="sub-label">MULTIMODAL AGRONOMIC EVALUATION</span>
+            <p class="ai-pro-narrative-text" id="ai-pro-summary-text">...</p>
+          </div>
+
+          <!-- Storage Guidance from Gemini -->
+          <div class="ai-pro-storage-row">
+            <span class="storage-icon">💡</span>
+            <span class="storage-text" id="ai-pro-storage-text">...</span>
+          </div>
+
+          <!-- Token Efficiency Footer -->
+          <div class="ai-pro-token-footer">
+            <span id="ai-pro-token-info">⚡ Gemini 2.5 Flash • 258 tokens • 740ms</span>
+            <span class="token-saver-status-tag" id="ai-pro-saver-tag">🛡️ Token-Saver Guard Active</span>
+          </div>
         </div>
 
         <!-- Produce Category Card -->
@@ -379,6 +515,36 @@
     </div>
     <div class="history-strip" id="history-strip"></div>
   </section>
+
+  <!-- Gemini API Key Configuration Modal -->
+  <div class="modal" id="key-modal" style="display: none;">
+    <div class="modal-backdrop" id="key-modal-backdrop"></div>
+    <div class="modal-content key-modal-card">
+      <div class="modal-header">
+        <h3>🔑 Configure Google Gemini API</h3>
+        <button class="modal-close-btn" id="key-modal-close-btn">✕</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+        Enter your Gemini API key to enable AI Pro quality inspection. It will be used securely on your Raspberry Pi 5.
+      </p>
+      <div class="form-group" style="margin-top: 1rem;">
+        <label for="gemini-key-input" style="font-size: 0.8rem; font-weight: 600;">Gemini API Key:</label>
+        <input type="password" id="gemini-key-input" class="text-input" placeholder="AIzaSy..." style="width: 100%; margin-top: 0.35rem;">
+      </div>
+      <div class="form-group" style="margin-top: 0.75rem;">
+        <label for="gemini-model-select" style="font-size: 0.8rem; font-weight: 600;">Gemini Model:</label>
+        <select id="gemini-model-select" class="text-input" style="width: 100%; margin-top: 0.35rem;">
+          <option value="gemini-2.5-flash" selected>gemini-2.5-flash (Fast, High Quality & Low Tokens)</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+        </select>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+        <button class="btn btn-secondary" id="btn-cancel-key">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-key">Save & Activate</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Fullscreen Image Modal -->
   <div class="modal" id="image-modal">

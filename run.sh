@@ -18,5 +18,5 @@ else
   python -m pip install -r requirements.txt >/dev/null 2>&1 || true
 fi
 
-echo "🍓 Starting FreshScan AI on Raspberry Pi (Port 8000)..."
+echo "🍓 Starting FreshScan AI 2.0 on Raspberry Pi 5 (USB Camera + Gemini AI Pro) on Port 8000..."
 python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000

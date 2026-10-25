@@ -42,17 +42,21 @@ class Config:
         "Tomato": 10
     }
 
-    # TFLite Model Paths for Edge & Embedded Devices (Raspberry Pi 4B)
+    # Target Hardware Platform
+    PLATFORM_NAME = "Raspberry Pi 5"
+
+    # TFLite Model Paths for Edge & Embedded Devices (Raspberry Pi 5 ARM Cortex-A76)
     TFLITE_CATEGORY_MODEL = os.path.join(MODEL_DIR, 'category_classifier.tflite')
     TFLITE_FRESHNESS_MODEL = os.path.join(MODEL_DIR, 'mobilenetv2_baseline.tflite')
     KERAS_CATEGORY_MODEL = os.path.join(MODEL_DIR, 'category_classifier.keras')
     KERAS_FRESHNESS_MODEL = os.path.join(MODEL_DIR, 'mobilenetv2_baseline.keras')
 
-    # Raspberry Pi Camera settings
+    # External USB Camera settings (V4L2 on Raspberry Pi 5)
     CAMERA_WIDTH = int(os.getenv('CAMERA_WIDTH', '1280'))
     CAMERA_HEIGHT = int(os.getenv('CAMERA_HEIGHT', '720'))
     CAMERA_FPS = int(os.getenv('CAMERA_FPS', '20'))
-    CAMERA_INDEX = int(os.getenv('CAMERA_INDEX', '0'))
+    # CAMERA_INDEX can be an integer, 'auto', or a device path like '/dev/video2'
+    CAMERA_INDEX = os.getenv('CAMERA_INDEX', 'auto')
 
     # AI Decision Engine Threshold
     CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.70'))
@@ -66,7 +70,7 @@ class Config:
     MQTT_BROKER_PORT = int(os.getenv('MQTT_BROKER_PORT', '1883'))
     MQTT_USERNAME = os.getenv('MQTT_USERNAME', None)
     MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', None)
-    MQTT_CLIENT_ID = os.getenv('MQTT_CLIENT_ID', 'freshscan_pi_controller')
+    MQTT_CLIENT_ID = os.getenv('MQTT_CLIENT_ID', 'freshscan_pi5_controller')
 
     # MQTT Topics
     MQTT_TOPIC_SPOILAGE = "freshscan/events/spoilage"
@@ -79,3 +83,13 @@ class Config:
     TELEGRAM_ENABLED = os.getenv('TELEGRAM_ENABLED', 'true').lower() in ('true', '1', 'yes')
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
     TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+    # =========================================================================
+    # Gemini AI Pro Settings (Multimodal Quality Inspection & Token Optimizer)
+    # =========================================================================
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+    GEMINI_AUTO_INTERVAL = float(os.getenv('GEMINI_AUTO_INTERVAL', '15.0'))  # Seconds between auto-captures
+    GEMINI_COOLDOWN = float(os.getenv('GEMINI_COOLDOWN', '10.0'))           # Minimum seconds between API calls
+    GEMINI_FRAME_DIFF_THRESHOLD = float(os.getenv('GEMINI_FRAME_DIFF_THRESHOLD', '10.0'))  # % diff to qualify as new scene
+    GEMINI_MAX_IMAGE_DIM = int(os.getenv('GEMINI_MAX_IMAGE_DIM', '512'))    # Downscale dimension for minimal tokens

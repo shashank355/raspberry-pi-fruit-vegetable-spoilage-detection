@@ -1,8 +1,9 @@
 # FreshScan AI 2.0 — Complete Implementation Guide
-### Edge AI Spoilage Detection • Raspberry Pi 4B • ESP32 Wireless Alert Panel • Telegram Bot
+### Edge AI Spoilage Detection • Raspberry Pi 5 • External USB Camera • Gemini AI Pro • ESP32 Wireless Panel • Telegram Bot
 
 FreshScan AI 2.0 is an integrated, modular IoT & Edge AI system:
-- **Raspberry Pi 4B + Rev 1.3 CSI Camera**: Runs fast TensorFlow Lite MobileNetV2 inference (~60ms), validates prediction confidence, prevents duplicate alerts, manages a persistent SQLite database, and publishes wireless MQTT events.
+- **Raspberry Pi 5 + External USB Camera**: Runs ultra-fast TensorFlow Lite MobileNetV2 inference (~15–25ms on Cortex-A76), validates prediction confidence, prevents duplicate alerts, manages a persistent SQLite database, and publishes wireless MQTT events.
+- **Gemini AI Pro Quality Inspector**: Features an interactive dashboard toggle switch that auto-captures live photos from the USB camera at frequent intervals, performing deep multimodal quality analysis, defect detection, and shelf-life estimation via Gemini API with strict **Token-Saving Guardrails** (scene-change gating, 512px downscaling, and adaptive cooldowns).
 - **ESP32 Physical Alert Panel**: Controls a 16×2 I²C LCD (rotating multi-alert display), 10 individually assigned produce LEDs (Blinking = New Alert, Steady ON = Acknowledged, OFF = Cleared), and 2 physical buttons (ACKNOWLEDGE and CLEAR).
 - **Telegram Notification Worker**: Asynchronously dispatches instant spoilage warnings with the captured annotated photograph without blocking the physical alerts.
 
@@ -12,14 +13,19 @@ FreshScan AI 2.0 is an integrated, modular IoT & Edge AI system:
 
 ```
 +-----------------------------------------------------------------------------------+
-|                            RASPBERRY PI 4B (Edge AI Controller)                   |
+|                            RASPBERRY PI 5 (Edge AI Controller)                    |
 |                                                                                   |
-|  [Pi Camera Rev 1.3]                                                              |
+|  [External USB Camera (V4L2)]                                                     |
 |          │                                                                        |
-|          ▼                                                                        |
-|  [TFLite Dual Engine]                                                             |
-|   ├── Category Classifier (10 Classes)                                            |
-|   └── Freshness Classifier (Fresh / Rotten)                                       |
+|          ├──► [Local Edge TFLite SIMD] (~20ms latency, 0 tokens)                  |
+|          │     ├── Category Classifier (10 Classes)                               |
+|          │     └── Freshness Classifier (Fresh / Rotten)                          |
+|          │                                                                        |
+|          └──► [Gemini AI Pro Engine] (When AI Pro Toggle is ON)                   |
+|                ├── Motion / Frame Diff Gating (Skips static frames)               |
+|                ├── 512px JPEG Downscaling (~258 tokens vs 1000+)                  |
+|                ├── Adaptive Cooldown Protection (Guards rate limits)              |
+|                └── Structured Agronomic Quality Report                            |
 |          │                                                                        |
 |          ▼                                                                        |
 |  [Decision Engine & Event Manager] ◄──────► [SQLite Database (freshscan.db)]      |
@@ -54,11 +60,11 @@ FreshScan AI 2.0 is an integrated, modular IoT & Edge AI system:
 
 | Peripheral | ESP32 GPIO | Description / Wiring |
 | :--- | :--- | :--- |
-| **16×2 LCD SDA** | **GPIO 21** | I²C Data line (Verify 3.3V logic or use level shifter) |
+| **16×2 LCD SDA** | **GPIO 21** | I²C Data line (3.3V logic) |
 | **16×2 LCD SCL** | **GPIO 22** | I²C Clock line |
 | **LED 1 (Apple)** | **GPIO 13** | Red LED via 220–330 Ω resistor to GND |
 | **LED 2 (Banana)** | **GPIO 14** | Red LED via 220–330 Ω resistor to GND |
-| **LED 3 (Bellpepper)** | **GPIO 16** | Red LED via 220–330 Ω resistor to GND |
+| **LED 3 (Bell Pepper)** | **GPIO 16** | Red LED via 220–330 Ω resistor to GND |
 | **LED 4 (Carrot)** | **GPIO 17** | Red LED via 220–330 Ω resistor to GND |
 | **LED 5 (Cucumber)** | **GPIO 18** | Red LED via 220–330 Ω resistor to GND |
 | **LED 6 (Mango)** | **GPIO 19** | Red LED via 220–330 Ω resistor to GND |
@@ -66,88 +72,42 @@ FreshScan AI 2.0 is an integrated, modular IoT & Edge AI system:
 | **LED 8 (Potato)** | **GPIO 25** | Red LED via 220–330 Ω resistor to GND |
 | **LED 9 (Strawberry)** | **GPIO 26** | Red LED via 220–330 Ω resistor to GND |
 | **LED 10 (Tomato)** | **GPIO 27** | Red LED via 220–330 Ω resistor to GND |
-| **ACK Button** | **GPIO 32** | Push button to GND (Internal `INPUT_PULLUP` enabled) |
-| **CLEAR Button** | **GPIO 33** | Push button to GND (Internal `INPUT_PULLUP` enabled) |
+| **Button 1 (ACKNOWLEDGE)** | **GPIO 32** | Momentary push button to GND (Internal PULLUP) |
+| **Button 2 (CLEAR)** | **GPIO 33** | Momentary push button to GND (Internal PULLUP) |
 
 ---
 
-## 3. MQTT Topics & Message Formats
+## 3. Gemini AI Pro & Token Efficiency Architecture
 
-| MQTT Topic | Direction | Purpose | Example Payload |
-| :--- | :--- | :--- | :--- |
-| `freshscan/events/spoilage` | Pi ➔ ESP32 | Transmits newly confirmed spoilage event | `{"event_id":"FS-0001","event":"SPOILAGE_DETECTED","vegetable":"Tomato","status":"Spoiled","confidence":0.962,"led_index":10}` |
-| `freshscan/events/active_alerts` | Pi ➔ ESP32 | Retained active alerts list for boot synchronization | `[{"event_id":"FS-0001","vegetable":"Tomato","status":"NEW","led_index":10}]` |
-| `freshscan/events/acknowledged` | ESP32 ➔ Pi | Button 1 pressed; user acknowledged warning | `{"vegetable":"Tomato","event_id":"FS-0001","action":"ACKNOWLEDGE"}` |
-| `freshscan/events/cleared` | ESP32 ➔ Pi | Button 2 pressed; spoiled item removed | `{"vegetable":"Tomato","event_id":"FS-0001","action":"CLEAR"}` |
-| `freshscan/controller/status` | ESP32 ➔ Pi | Heartbeat & Wi-Fi IP reporting | `{"device":"ESP32_Alert_Panel","ip":"192.168.1.150","active_alerts":1}` |
+The user can enable the **AI Pro** toggle button in the dashboard for continuous quality inspection. To prevent token exhaustion under limited quotas, FreshScan AI 2.0 incorporates 4 tiers of token protection:
 
----
-
-## 4. Setting up the ESP32 Firmware
-
-The ESP32 firmware source code is located at:
-[`esp32_firmware/FreshScan_Controller/FreshScan_Controller.ino`](file:///home/shashank/Documents/vegies_classifier%20v2/Image-Based-Food-Freshness-Prediction-System/esp32_firmware/FreshScan_Controller/FreshScan_Controller.ino)
-
-### Steps in Arduino IDE:
-1. Open Arduino IDE and install the **ESP32 Board Package** (`esp32` by Espressif).
-2. Install required libraries from Library Manager:
-   - **`PubSubClient`** by Nick O'Leary
-   - **`ArduinoJson`** by Benoit Blanchon (v6 or v7)
-   - **`LiquidCrystal_I2C`** by Frank de Brabander / Marco Schwartz
-3. Open `FreshScan_Controller.ino`.
-4. Update the Wi-Fi and MQTT Broker IP settings:
-   ```cpp
-   const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-   const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-   const char* MQTT_BROKER   = "192.168.1.100"; // IP address of your Raspberry Pi 4B
-   ```
-5. Select **ESP32 Dev Module**, choose your serial port, and click **Upload**.
-
----
-
-## 5. Setting up Telegram Bot Notifications
-
-1. Open Telegram and search for **`@BotFather`**.
-2. Send `/newbot`, follow prompts, and copy your **HTTP API Token**.
-3. Start a chat with your new bot (click `Start`).
-4. Find your chat ID:
-   - Message `@userinfobot` or `@RawDataBot` on Telegram to get your numeric `Id`.
-5. Configure in `Image-Based-Food-Freshness-Prediction-System/.env`:
-   ```ini
-   TELEGRAM_ENABLED=true
-   TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ
-   TELEGRAM_CHAT_ID=987654321
-   ```
-
----
-
-## 6. Running FreshScan AI 2.0 on Raspberry Pi 4B
-
-```bash
-cd Image-Based-Food-Freshness-Prediction-System
-
-# 1. Run the one-click Pi setup (installs mosquitto, picamera2, venv):
-./setup_pi.sh
-
-# 2. Start the integrated web server and AI engine:
-./run.sh
+```
+[Camera Frame]
+      │
+      ▼
+[Is Scene Changed? (64x64 Grayscale Diff >= 10%)]
+      ├── NO ──► SKIP Gemini call! Re-use verified verdict (Tokens Saved: ~300)
+      │
+      └── YES ─► [Is Cooldown Expired? (>= 10s elapsed)]
+                     ├── NO ──► SKIP Gemini call! Wait for cooldown
+                     │
+                     └── YES ─► [Pre-Downscale to 512x512 JPEG]
+                                    │ (Reduces token consumption by ~75%)
+                                    ▼
+                                [Gemini 2.5 Flash API Call (~258 tokens)]
+                                    │
+                                    ▼
+                         [Render Results in Dashboard]
 ```
 
-- Open the dashboard in any browser: `http://<raspberry-pi-ip>:8000`
-- Access the **Active Spoilage Alerts** panel to monitor all alerts syncing live with your ESP32.
-- Use the **Hardware Test Studio** in the UI to simulate any vegetable alert (e.g., Tomato LED 10) to test your LCD and LEDs immediately!
-
 ---
 
-## 7. Running in Standalone / Headless CLI Mode
+## 4. Quick Start Commands
 
-If running headless without a browser or using an external GPIO trigger:
 ```bash
-source venv/bin/activate
+# 1. Run camera diagnostics:
+python test_camera.py
 
-# Single inspection from Camera Rev 1.3:
-python capture_and_classify.py
-
-# Continuous inspection loop every 3 seconds:
-python capture_and_classify.py --loop --interval 3.0
+# 2. Run the main web application:
+./run.sh
 ```

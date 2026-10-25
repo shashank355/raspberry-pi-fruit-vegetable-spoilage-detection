@@ -1,7 +1,7 @@
 numpy
 pandas
 matplotlib
-seaborn 
+seaborn
 tensorflow
 opencv-python
 fastapi
@@ -12,3 +12,4 @@ scikit-learn
 gradio
 paho-mqtt
 requests
+google-genai

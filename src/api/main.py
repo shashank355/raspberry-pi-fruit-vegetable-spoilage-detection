@@ -2,8 +2,8 @@ import io
 import os
 import base64
 from pathlib import Path
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from typing import Optional, Dict, Any, Tuple
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -11,7 +11,8 @@ from PIL import Image
 import numpy as np
 
 from src.pipeline.prediction_pipeline import PredictionPipeline
-from src.camera import PiCameraManager
+from src.pipeline.gemini_service import GeminiQualityInspector
+from src.camera import USBCameraManager
 from src.events.event_manager import EventManager
 from src.config import Config
 
@@ -19,8 +20,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 app = FastAPI(
-    title="FreshScan AI 2.0 — Edge AI Spoilage Detection & ESP32 Alert System",
-    version="2.0.0"
+    title="FreshScan AI 2.0 — Edge AI Spoilage Detection & Gemini AI Pro (RPi 5)",
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -32,8 +33,9 @@ app.add_middleware(
 )
 
 pipeline = PredictionPipeline()
-camera_manager = PiCameraManager()
+camera_manager = USBCameraManager()
 event_manager = EventManager()
+gemini_inspector = GeminiQualityInspector()
 
 PRODUCE_METADATA = {
     "Apple": {"emoji": "🍎", "type": "Fruit", "tip": "Store in refrigerator crisper drawer for 4–6 weeks."},
@@ -49,15 +51,15 @@ PRODUCE_METADATA = {
 }
 
 
-def read_imagefile(file) -> np.ndarray:
+def read_imagefile(file) -> Tuple[np.ndarray, Image.Image]:
     img = Image.open(file).convert("RGB")
-    return np.array(img)
+    return np.array(img), img
 
 
 def _format_prediction_response(img_array: np.ndarray, result: dict):
     annotated_img = pipeline.annotate(img_array, result)
 
-    # Process through FreshScan AI 2.0 Decision Engine (SQLite + MQTT to ESP32 + Telegram)
+    # Process through FreshScan AI Decision Engine (SQLite + MQTT to ESP32 + Telegram)
     decision = event_manager.process_inspection(result, annotated_img=annotated_img)
 
     out_path = "annotated_result.jpg"
@@ -81,10 +83,13 @@ def _format_prediction_response(img_array: np.ndarray, result: dict):
     }
 
 
+# ==========================================
+# Local Edge Inference Endpoints
+# ==========================================
 @app.post("/predict/image")
 async def predict_image(image: UploadFile = File(...)):
     try:
-        img_array = read_imagefile(image.file)
+        img_array, pil_img = read_imagefile(image.file)
         result = pipeline.predict(img_array)
         return _format_prediction_response(img_array, result)
     except Exception as e:
@@ -92,25 +97,46 @@ async def predict_image(image: UploadFile = File(...)):
 
 
 @app.post("/api/camera/capture")
-async def capture_from_pi_camera():
-    """Snaps an image from the physical Raspberry Pi Camera Rev 1.3 and analyzes freshness."""
+async def capture_from_usb_camera():
+    """Snaps an image from the external USB camera and analyzes freshness with edge models."""
     try:
         rgb_arr, pil_img = camera_manager.capture_frame()
         result = pipeline.predict(rgb_arr)
         return _format_prediction_response(rgb_arr, result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pi Camera capture error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"USB Camera capture error: {str(e)}")
 
 
 @app.get("/api/camera/status")
 async def get_camera_status():
-    """Returns status of the attached Raspberry Pi Camera (Rev 1.3)."""
+    """Returns status of the external USB camera on Raspberry Pi 5."""
     return camera_manager.get_status()
 
 
+@app.get("/api/camera/devices")
+async def get_camera_devices():
+    """Discovers and returns all video devices attached to the Raspberry Pi 5."""
+    devices = camera_manager.list_available_cameras()
+    return {
+        "devices": devices,
+        "current_index": camera_manager.device_index,
+        "current_device": camera_manager.device_name
+    }
+
+
+@app.post("/api/camera/select")
+async def select_camera_device(index: Any = Body(..., embed=True)):
+    """Selects and switches to a specific camera index (e.g. 2 for USB camera or 'auto')."""
+    success = camera_manager.switch_camera(index)
+    return {
+        "success": success,
+        "camera_status": camera_manager.get_status()
+    }
+
+
 @app.get("/api/camera/stream")
-def stream_pi_camera():
-    """Live MJPEG video stream from the Raspberry Pi Camera."""
+def stream_usb_camera():
+    """Live MJPEG video stream from the external USB camera on Raspberry Pi 5."""
     return StreamingResponse(
         camera_manager.generate_mjpeg_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
@@ -118,7 +144,96 @@ def stream_pi_camera():
 
 
 # ==========================================
-# FreshScan AI 2.0 Alert Management Endpoints
+# Gemini AI Pro Endpoints (Token-Optimized)
+# ==========================================
+@app.get("/api/ai-pro/status")
+async def get_ai_pro_status():
+    """Returns AI Pro toggle state, token usage statistics, and cooldown status."""
+    return gemini_inspector.get_telemetry()
+
+
+@app.post("/api/ai-pro/toggle")
+async def toggle_ai_pro(active: bool = Body(..., embed=True)):
+    """Enables or disables continuous AI Pro auto-inspection mode."""
+    new_state = gemini_inspector.set_active(active)
+    return {
+        "is_active": new_state,
+        "message": "AI Pro auto-inspection enabled" if new_state else "AI Pro auto-inspection paused",
+        "telemetry": gemini_inspector.get_telemetry()
+    }
+
+
+@app.post("/api/ai-pro/configure")
+async def configure_ai_pro(
+    api_key: Optional[str] = Body(None),
+    model: Optional[str] = Body(None),
+    interval: Optional[float] = Body(None),
+    cooldown: Optional[float] = Body(None),
+    diff_threshold: Optional[float] = Body(None)
+):
+    """Dynamically updates Gemini AI Pro configuration and API credentials."""
+    gemini_inspector.update_config(
+        api_key=api_key,
+        model=model,
+        interval=interval,
+        cooldown=cooldown,
+        diff_threshold=diff_threshold
+    )
+    return {
+        "success": True,
+        "configured": gemini_inspector.is_configured(),
+        "telemetry": gemini_inspector.get_telemetry()
+    }
+
+
+@app.post("/api/ai-pro/inspect")
+async def inspect_with_ai_pro(
+    source: str = Query("camera", description="'camera' to snap USB camera or 'upload' for uploaded file"),
+    force: bool = Query(False, description="Bypass motion/diff token saver and force Gemini call"),
+    image: Optional[UploadFile] = File(None)
+):
+    """
+    Performs deep multimodal quality inspection via Gemini API with token protection.
+    If source='camera', grabs live frame from external USB camera.
+    """
+    try:
+        if source == "upload" and image is not None:
+            rgb_arr, pil_img = read_imagefile(image.file)
+        else:
+            rgb_arr, pil_img = camera_manager.capture_frame()
+
+        # Run local pre-check for hint and alert integration
+        try:
+            local_res = pipeline.predict(rgb_arr)
+        except Exception:
+            local_res = None
+
+        inspection = gemini_inspector.inspect_produce(pil_img, force=force, local_prediction=local_res)
+
+        # If Gemini identified spoilage and an actual call was made, trigger alert pipeline
+        if inspection.get("success") and not inspection.get("skipped") and inspection.get("data"):
+            data = inspection["data"]
+            fresh_label = data.get("freshness", "Fresh")
+            is_spoiled = fresh_label.lower() in ("rotten", "spoiled") or data.get("quality_grade") == "Spoiled"
+
+            if is_spoiled:
+                produce_name = data.get("produce", "Unknown")
+                alert_res = {
+                    "category": {"label": produce_name, "idx": 0, "score": float(data.get("confidence", 0.9))},
+                    "freshness": {"label": "Rotten", "idx": 1, "score": float(data.get("confidence", 0.9))},
+                    "pil_img": pil_img,
+                    "engine": data.get("engine", "Gemini AI Pro")
+                }
+                event_manager.process_inspection(alert_res, annotated_img=pil_img)
+
+        return inspection
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Pro Inspection error: {str(e)}")
+
+
+# ==========================================
+# FreshScan AI Alert Management Endpoints
 # ==========================================
 @app.get("/api/alerts/active")
 async def get_active_alerts():
@@ -148,13 +263,16 @@ async def get_event_history(limit: int = 50):
 
 @app.get("/api/system/status")
 async def get_system_status():
-    """Comprehensive health check of Pi 4B, Camera, AI engine, MQTT, and ESP32 panel."""
+    """Comprehensive health check of Raspberry Pi 5, USB Camera, AI Pro, MQTT, and ESP32 panel."""
     mqtt_status = event_manager.mqtt.get_status()
     cam_status = camera_manager.get_status()
+    ai_pro_status = gemini_inspector.get_telemetry()
     return {
         "system": "FreshScan AI 2.0",
+        "platform": Config.PLATFORM_NAME,
         "engine": pipeline.engine,
         "camera": cam_status,
+        "ai_pro": ai_pro_status,
         "mqtt": mqtt_status,
         "telegram_enabled": Config.TELEGRAM_ENABLED and bool(Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID),
         "active_alerts_count": len(event_manager.get_active_alerts())
@@ -186,11 +304,13 @@ async def test_telegram():
 @app.get("/api/metadata")
 async def get_metadata():
     return {
+        "platform": Config.PLATFORM_NAME,
         "categories": pipeline.category_labels,
         "freshness_states": pipeline.freshness_labels,
         "produce_info": PRODUCE_METADATA,
         "produce_led_map": Config.PRODUCE_LED_MAP,
-        "engine": pipeline.engine
+        "engine": pipeline.engine,
+        "ai_pro": gemini_inspector.get_telemetry()
     }
 
 
